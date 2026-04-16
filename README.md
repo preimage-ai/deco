@@ -18,21 +18,27 @@ Not implemented yet:
 - Trajectory editing UI
 - Final rendering pipeline
 
-## Requirements
+## Installation
+
+Requirements:
 
 - Python 3.9+
-- `fastapi`
-- `uvicorn`
-- `pydantic`
-- `viser`
-- `plyfile`
-- `numpy`
-- `python-multipart`
-- `pytest` for tests
 
-Optional for `.gltf` object support:
+From the repository root, create or activate a virtual environment, then install dependencies:
 
-- `trimesh`
+```bash
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+Example with `venv`:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
 
 If you are using the same environment as development here, launch `uvicorn` through `python -m uvicorn` so it uses the correct interpreter and installed dependencies.
 
@@ -96,7 +102,7 @@ python -m uvicorn apps.api.app.main:app --host 0.0.0.0 --port 8000
 This environment has a broken globally installed Hydra pytest plugin, so tests should be run with plugin autoload disabled:
 
 ```bash
-PYTHONPATH=. PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest apps/api/tests -q
+PYTHONPATH=. PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest apps/api/tests -q
 ```
 
 ## Repository Layout
