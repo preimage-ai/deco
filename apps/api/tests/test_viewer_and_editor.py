@@ -30,9 +30,12 @@ def test_editor_and_viewer_routes_registered(tmp_path: Path) -> None:
 def test_editor_page_includes_mesh_object_workflow(repo) -> None:
     html = editor_page(repo)
 
+    assert 'id="room-dropzone"' in html
+    assert 'id="mesh-dropzone"' in html
     assert 'accept=".glb,.gltf"' in html
-    assert 'id="upload-object-form"' in html
-    assert 'id="place-object-form"' in html
+    assert 'id="new-scene-button"' in html
+    assert 'id="project-form"' not in html
+    assert 'id="place-object-form"' not in html
 
 
 def test_viewer_service_loads_room_asset_and_visible_mesh_objects(repo, monkeypatch) -> None:

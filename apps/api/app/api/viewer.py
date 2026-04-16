@@ -7,7 +7,6 @@ from fastapi.responses import HTMLResponse
 
 from apps.api.app.deps import get_repo, get_viewer_service
 from apps.api.app.orchestration.viewer_service import MissingViewerDependencyError
-from apps.api.app.schemas.project import ProjectSummary
 from apps.api.app.schemas.viewer import ViewerLaunchRequest, ViewerLaunchResponse
 from services.preview.mesh_loader import InvalidMeshAssetError, MissingMeshDependencyError
 from services.preview.viser_scene import InvalidGaussianSplatError
@@ -17,514 +16,954 @@ router = APIRouter(tags=["viewer"])
 
 
 @router.get("/editor", response_class=HTMLResponse)
-def editor_page(repo: ProjectRepository = Depends(get_repo)) -> str:
-    """Serve a minimal editor shell for project creation and room upload."""
-    projects = [ProjectSummary.from_manifest(item) for item in repo.list_projects()]
-    project_options = "".join(
-        f'<option value="{project.id}">{project.name} ({project.id})</option>'
-        for project in projects
-    )
-    return f"""<!doctype html>
+def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
+    """Serve a drag-and-drop-first editor shell for room and mesh uploads."""
+    return """<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>deco editor</title>
     <style>
-      :root {{
-        color-scheme: light;
-        --bg: #f4f1ea;
-        --panel: #fffdf9;
-        --ink: #1d1c1a;
-        --muted: #6c655d;
-        --accent: #c25b2a;
-        --line: #d9d2c8;
-      }}
-      body {{
+      :root {
+        color-scheme: dark;
+        --bg: #07111f;
+        --bg-glow: #11223d;
+        --panel: rgba(12, 24, 42, 0.84);
+        --panel-strong: rgba(15, 31, 52, 0.96);
+        --ink: #f2f7ff;
+        --muted: #9eafc7;
+        --line: rgba(149, 179, 222, 0.16);
+        --line-strong: rgba(149, 179, 222, 0.28);
+        --accent: #6ee7c8;
+        --accent-strong: #4dd2ff;
+        --shadow: 0 32px 90px rgba(3, 8, 18, 0.45);
+        --radius-xl: 28px;
+        --radius-lg: 22px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
         margin: 0;
-        font-family: Georgia, "Times New Roman", serif;
-        background: radial-gradient(circle at top, #fff7ee, var(--bg) 45%);
+        min-height: 100vh;
+        font-family: "Sora", "Avenir Next", "Helvetica Neue", sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(78, 152, 255, 0.18), transparent 30%),
+          radial-gradient(circle at top right, rgba(110, 231, 200, 0.16), transparent 28%),
+          linear-gradient(180deg, var(--bg-glow), var(--bg));
         color: var(--ink);
-      }}
-      main {{
-        max-width: 1100px;
-        margin: 0 auto;
-        padding: 32px 20px 48px;
-      }}
-      .hero {{
+      }
+      button, input, select, video {
+        font: inherit;
+      }
+      button, input, select {
+        border: 1px solid var(--line);
+        outline: none;
+      }
+      button {
+        cursor: pointer;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      .shell {
+        min-height: 100vh;
+        padding: 28px;
+      }
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        font-size: 12px;
+        color: var(--accent);
+      }
+      .eyebrow::before {
+        content: "";
+        width: 28px;
+        height: 1px;
+        background: currentColor;
+      }
+      .landing {
+        min-height: calc(100vh - 56px);
         display: grid;
+        place-items: center;
+      }
+      .landing-card {
+        width: min(820px, 100%);
+        padding: 36px;
+        border-radius: var(--radius-xl);
+        background: linear-gradient(145deg, rgba(16, 31, 53, 0.92), rgba(10, 18, 31, 0.94));
+        border: 1px solid var(--line-strong);
+        box-shadow: var(--shadow);
+      }
+      .landing-copy,
+      .workspace-header-copy,
+      .stack,
+      .rail,
+      .stage-column,
+      .workspace {
+        display: grid;
+        gap: 18px;
+      }
+      .landing-copy h1,
+      .workspace-title {
+        margin: 0;
+        font-size: clamp(38px, 7vw, 68px);
+        line-height: 0.95;
+        letter-spacing: -0.05em;
+      }
+      .landing-copy p,
+      .viewer-note,
+      .panel p,
+      .status-card p,
+      .meta-copy {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      .dropzone {
+        display: grid;
+        gap: 16px;
+        padding: 28px;
+        border-radius: calc(var(--radius-xl) - 4px);
+        border: 1px dashed rgba(110, 231, 200, 0.38);
+        background: linear-gradient(180deg, rgba(110, 231, 200, 0.06), rgba(77, 210, 255, 0.03));
+        transition: border-color 180ms ease, transform 180ms ease, background 180ms ease;
+      }
+      .dropzone.is-dragging,
+      .dropzone:hover {
+        border-color: rgba(110, 231, 200, 0.82);
+        background: linear-gradient(180deg, rgba(110, 231, 200, 0.12), rgba(77, 210, 255, 0.08));
+        transform: translateY(-2px);
+      }
+      .dropzone h2,
+      .panel h2,
+      .render-card h2 {
+        margin: 0;
+        font-size: 20px;
+        letter-spacing: -0.03em;
+      }
+      .chip-row,
+      .cta-row,
+      .workspace-header,
+      .workspace-header-actions,
+      .panel-header,
+      .stage-header,
+      .render-header,
+      .action-row,
+      .inline-grid {
+        display: flex;
         gap: 12px;
-        margin-bottom: 24px;
-      }}
-      .grid {{
+      }
+      .chip-row,
+      .cta-row,
+      .workspace-header-actions,
+      .action-row {
+        flex-wrap: wrap;
+      }
+      .workspace-header,
+      .panel-header,
+      .stage-header,
+      .render-header {
+        justify-content: space-between;
+        align-items: center;
+      }
+      .pill,
+      .stat-pill,
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--line);
+        color: var(--ink);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .button {
+        border: none;
+        border-radius: 999px;
+        padding: 13px 18px;
+        font-weight: 600;
+        transition: transform 180ms ease, box-shadow 180ms ease;
+      }
+      .button:hover {
+        transform: translateY(-1px);
+      }
+      .button-primary {
+        color: #031019;
+        background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+        box-shadow: 0 16px 32px rgba(77, 210, 255, 0.22);
+      }
+      .button-secondary {
+        color: var(--ink);
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--line-strong);
+      }
+      .workspace-grid {
         display: grid;
-        grid-template-columns: 320px 1fr;
+        grid-template-columns: minmax(320px, 360px) minmax(0, 1fr);
         gap: 20px;
-      }}
-      .card {{
+        align-items: start;
+      }
+      .panel,
+      .stage-panel,
+      .render-card,
+      .status-card {
         background: var(--panel);
         border: 1px solid var(--line);
-        border-radius: 18px;
-        padding: 18px;
-        box-shadow: 0 12px 30px rgba(60, 40, 20, 0.06);
-      }}
-      h1, h2 {{
-        margin: 0 0 8px;
-        font-weight: 600;
-      }}
-      p {{
-        margin: 0;
-        color: var(--muted);
-      }}
-      form {{
-        display: grid;
-        gap: 10px;
-        margin-top: 14px;
-      }}
-      label {{
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(22px);
+      }
+      .panel,
+      .status-card,
+      .stage-panel,
+      .render-card {
+        padding: 20px;
+      }
+      label {
         display: grid;
         gap: 6px;
-        font-size: 14px;
-      }}
-      input, select, button, video {{
-        font: inherit;
-        padding: 10px 12px;
-        border-radius: 10px;
-        border: 1px solid var(--line);
-      }}
-      button {{
-        background: var(--accent);
-        color: white;
-        border: none;
-        cursor: pointer;
-      }}
-      button.secondary {{
-        background: #efe7dc;
-        color: var(--ink);
-      }}
-      .viewer-wrap {{
-        display: grid;
-        gap: 14px;
-      }}
-      iframe {{
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      input,
+      select {
         width: 100%;
-        min-height: 700px;
-        border: 1px solid var(--line);
-        border-radius: 18px;
-        background: #f8f5f0;
-      }}
-      #status {{
+        padding: 14px 16px;
+        border-radius: 14px;
+        background: rgba(4, 10, 20, 0.5);
+        color: var(--ink);
+      }
+      .inline-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      .stage-frame {
+        position: relative;
+        min-height: 720px;
+        border-radius: calc(var(--radius-lg) - 4px);
+        overflow: hidden;
+        border: 1px solid rgba(149, 179, 222, 0.14);
+        background: linear-gradient(180deg, rgba(6, 12, 23, 0.84), rgba(6, 12, 23, 0.92));
+      }
+      iframe,
+      video {
+        width: 100%;
+        min-height: 100%;
+        border: 0;
+        border-radius: calc(var(--radius-lg) - 4px);
+        background: rgba(4, 8, 16, 0.8);
+      }
+      .stage-hint {
+        position: absolute;
+        inset: 18px;
+        display: grid;
+        place-items: center;
+        text-align: center;
+        padding: 24px;
+        border-radius: 22px;
+        border: 1px dashed rgba(110, 231, 200, 0.24);
+        background: rgba(6, 12, 24, 0.46);
+        color: var(--muted);
+        pointer-events: none;
+      }
+      .status-card {
+        min-height: 108px;
         white-space: pre-wrap;
+      }
+      .status-card[data-tone="error"] {
+        border-color: rgba(255, 143, 143, 0.28);
+      }
+      .status-card[data-tone="success"] {
+        border-color: rgba(110, 231, 200, 0.26);
+      }
+      .status-label {
+        margin-bottom: 12px;
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+      .badge-live::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      .ghost-note {
         font-size: 13px;
         color: var(--muted);
-      }}
-      @media (max-width: 900px) {{
-        .grid {{
+      }
+      .file-input {
+        display: none;
+      }
+      @media (max-width: 900px) {
+        .shell {
+          padding: 18px;
+        }
+        .workspace-grid {
           grid-template-columns: 1fr;
-        }}
-        iframe {{
-          min-height: 480px;
-        }}
-      }}
+        }
+        .workspace-header {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        .stage-frame {
+          min-height: 520px;
+        }
+        .inline-grid {
+          grid-template-columns: 1fr;
+        }
+      }
     </style>
   </head>
   <body>
-    <main>
-      <section class="hero">
-        <h1>deco room gsplat viewer</h1>
-        <p>Create a project, upload a room `gsplat` PLY, place GLB or GLTF objects, capture camera keyframes, and render trajectory MP4s.</p>
-      </section>
-      <section class="grid">
-        <div class="card">
-          <h2>Project</h2>
-          <p>Use the current API stack as a minimal editor shell.</p>
-          <form id="project-form">
-            <label>Name<input name="name" placeholder="Living room" required /></label>
-            <label>Description<input name="description" placeholder="Optional" /></label>
-            <button type="submit">Create project</button>
-          </form>
-          <form id="upload-form">
-            <label>Project
-              <select id="project-select" name="project_id" required>
-                <option value="">Select project</option>
-                {project_options}
-              </select>
-            </label>
-            <label>Room name<input name="name" placeholder="Room scan" /></label>
-            <label>PLY upload<input type="file" name="file" accept=".ply" required /></label>
-            <button type="submit">Upload gsplat</button>
-          </form>
-          <form id="upload-object-form">
-            <label>Project
-              <select id="object-project-select" name="project_id" required>
-                <option value="">Select project</option>
-                {project_options}
-              </select>
-            </label>
-            <label>Object name<input name="name" placeholder="Accent chair" /></label>
-            <label>Mesh upload<input type="file" name="file" accept=".glb,.gltf" required /></label>
-            <button type="submit">Upload mesh object</button>
-          </form>
-          <form id="place-object-form">
-            <label>Project
-              <select id="place-project-select" name="project_id" required>
-                <option value="">Select project</option>
-                {project_options}
-              </select>
-            </label>
-            <label>Object asset
-              <select id="object-asset-select" name="asset_id" required>
-                <option value="">Select uploaded mesh</option>
-              </select>
-            </label>
-            <label>Scene object name<input name="name" placeholder="Chair near window" required /></label>
-            <label>Position XYZ<input name="position" placeholder="0, 0, 0" value="0, 0, 0" /></label>
-            <label>Rotation XYZ (radians)<input name="rotation" placeholder="0, 0, 0" value="0, 0, 0" /></label>
-            <label>Scale XYZ<input name="scale" placeholder="1, 1, 1" value="1, 1, 1" /></label>
-            <button type="submit" class="secondary">Place object</button>
-          </form>
-          <form id="launch-form">
-            <label>Project
-              <select id="launch-project-select" name="project_id" required>
-                <option value="">Select project</option>
-                {project_options}
-              </select>
-            </label>
-            <button type="submit" class="secondary">Launch viewer</button>
-          </form>
-          <form id="trajectory-form">
-            <label>Trajectory name<input name="name" placeholder="Camera path" required /></label>
-            <label>Duration seconds<input name="duration_seconds" type="number" min="1" step="0.1" value="5" /></label>
-            <button type="submit">Create trajectory</button>
-          </form>
-          <form id="keyframe-form">
-            <label>Trajectory
-              <select id="trajectory-select" name="trajectory_id" required>
-                <option value="">Select trajectory</option>
-              </select>
-            </label>
-            <label>Keyframe time<input name="time_seconds" type="number" min="0" step="0.1" value="0" /></label>
-            <button type="submit" class="secondary">Capture current view</button>
-          </form>
-          <form id="render-form">
-            <label>Trajectory
-              <select id="render-trajectory-select" name="trajectory_id" required>
-                <option value="">Select trajectory</option>
-              </select>
-            </label>
-            <label>FPS<input name="fps" type="number" min="1" step="1" value="24" /></label>
-            <label>Width<input name="width" type="number" min="64" step="1" value="1280" /></label>
-            <label>Height<input name="height" type="number" min="64" step="1" value="720" /></label>
-            <button type="submit">Render MP4</button>
-          </form>
-          <div id="status">Ready.</div>
-        </div>
-        <div class="viewer-wrap">
-          <div class="card">
-            <h2>Viewer</h2>
-            <p>The room preview loads in a separate `viser` server and is embedded here. Click a mesh to reveal move and rotate gizmos, and newly placed objects appear without relaunching the viewer.</p>
+    <div class="shell">
+      <section id="landing" class="landing">
+        <div class="landing-card">
+          <div class="landing-copy">
+            <span class="eyebrow">deco studio</span>
+            <h1>Drop a Gaussian Splat to begin.</h1>
+            <p>Bring in a room `.ply` file and the editor will create a fresh scene, launch the viewer, and get you ready to place meshes immediately.</p>
           </div>
-          <iframe id="viewer-frame" title="viser viewer"></iframe>
-          <div class="card">
-            <h2>Trajectory Replay</h2>
-            <p>Render playback while the viewer tab is connected.</p>
-            <video id="render-video" controls style="width:100%; border-radius:12px; background:#111;"></video>
+          <div id="room-dropzone" class="dropzone" tabindex="0">
+            <div class="chip-row">
+              <span class="pill">Input `.ply`</span>
+              <span class="pill">Auto scene setup</span>
+              <span class="pill">Viewer launches itself</span>
+            </div>
+            <h2>Drag and drop your gsplat room here</h2>
+            <p class="meta-copy">No project setup, no naming, no extra clicks. If you prefer, click to browse for a file.</p>
+            <div class="cta-row">
+              <button id="room-browse-button" class="button button-primary" type="button">Choose `.ply`</button>
+              <span class="ghost-note">The first drop creates a new scene automatically.</span>
+            </div>
           </div>
         </div>
       </section>
-    </main>
+
+      <section id="workspace" class="workspace" hidden>
+        <header class="workspace-header">
+          <div class="workspace-header-copy">
+            <span class="eyebrow">deco studio</span>
+            <h1 class="workspace-title" id="scene-title">Fresh Scene</h1>
+            <p class="viewer-note" id="scene-subtitle">Drop meshes, drag them into place in the viewer, and capture camera motion once the composition feels right.</p>
+          </div>
+          <div class="workspace-header-actions">
+            <span class="stat-pill"><strong id="scene-object-count">0</strong> meshes</span>
+            <span class="stat-pill"><strong id="scene-trajectory-count">0</strong> shots</span>
+            <button id="new-scene-button" class="button button-secondary" type="button">Start New Scene</button>
+          </div>
+        </header>
+
+        <section class="workspace-grid">
+          <aside class="rail">
+            <div id="mesh-dropzone" class="panel dropzone" tabindex="0">
+              <div class="chip-row">
+                <span class="pill">Mesh `.glb` / `.gltf`</span>
+                <span class="pill">Live placement</span>
+              </div>
+              <h2>Drop a mesh into the scene</h2>
+              <p>Meshes are uploaded, instantiated, and inserted into the active viewer automatically. Then you can drag them into place with the gizmo.</p>
+              <div class="cta-row">
+                <button id="mesh-browse-button" class="button button-primary" type="button">Choose mesh</button>
+                <span class="ghost-note">New objects appear without reloading the viewer.</span>
+              </div>
+            </div>
+
+            <form id="trajectory-form" class="panel stack">
+              <div class="panel-header">
+                <div>
+                  <h2>Shot Builder</h2>
+                  <p>Create a trajectory once and keep capturing camera keyframes into it.</p>
+                </div>
+                <span class="badge">camera</span>
+              </div>
+              <label>
+                Duration
+                <input id="trajectory-duration" name="duration_seconds" type="number" min="1" step="0.1" value="5" />
+              </label>
+              <div class="action-row">
+                <button class="button button-primary" type="submit">Create Shot</button>
+                <span class="ghost-note" id="trajectory-draft-name">Next: Shot 1</span>
+              </div>
+            </form>
+
+            <form id="keyframe-form" class="panel stack">
+              <div class="panel-header">
+                <div>
+                  <h2>Keyframes</h2>
+                  <p>Capture the current viewer camera into the selected shot.</p>
+                </div>
+                <span class="badge">record</span>
+              </div>
+              <label>
+                Shot
+                <select id="trajectory-select" name="trajectory_id">
+                  <option value="">No shots yet</option>
+                </select>
+              </label>
+              <label>
+                Time (seconds)
+                <input id="keyframe-time" name="time_seconds" type="number" min="0" step="0.1" value="0" />
+              </label>
+              <button id="capture-keyframe-button" class="button button-secondary" type="submit">Capture Keyframe</button>
+            </form>
+
+            <form id="render-form" class="panel stack">
+              <div class="panel-header">
+                <div>
+                  <h2>Render</h2>
+                  <p>Generate an MP4 from the selected shot while the viewer tab stays connected.</p>
+                </div>
+                <span class="badge">export</span>
+              </div>
+              <label>
+                Shot
+                <select id="render-trajectory-select" name="trajectory_id">
+                  <option value="">No shots yet</option>
+                </select>
+              </label>
+              <div class="inline-grid">
+                <label>
+                  FPS
+                  <input id="render-fps" name="fps" type="number" min="1" step="1" value="24" />
+                </label>
+                <label>
+                  Width
+                  <input id="render-width" name="width" type="number" min="64" step="1" value="1280" />
+                </label>
+                <label>
+                  Height
+                  <input id="render-height" name="height" type="number" min="64" step="1" value="720" />
+                </label>
+              </div>
+              <button id="render-button" class="button button-primary" type="submit">Render MP4</button>
+            </form>
+
+            <div id="status-card" class="status-card" data-tone="info">
+              <div class="status-label">Status</div>
+              <div id="status">Drop a room `.ply` to begin.</div>
+            </div>
+          </aside>
+
+          <div class="stage-column">
+            <section class="stage-panel">
+              <div class="stage-header">
+                <div>
+                  <h2>Viewer Stage</h2>
+                  <p class="viewer-note">Click any mesh in the viewer to reveal move and rotate gizmos. Drop more meshes from the left rail whenever you need them.</p>
+                </div>
+                <span id="viewer-badge" class="badge">waiting</span>
+              </div>
+              <div class="stage-frame">
+                <iframe id="viewer-frame" title="viser viewer"></iframe>
+                <div id="stage-hint" class="stage-hint">
+                  <div>
+                    <strong>The viewer will appear here.</strong>
+                    <div>Upload a room first, then drop meshes into the scene.</div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="render-card">
+              <div class="render-header">
+                <div>
+                  <h2>Playback</h2>
+                  <p class="viewer-note">Rendered clips show up here as soon as the export finishes.</p>
+                </div>
+                <span class="badge badge-live">preview</span>
+              </div>
+              <video id="render-video" controls></video>
+            </section>
+          </div>
+        </section>
+      </section>
+    </div>
+
+    <input id="room-file-input" class="file-input" type="file" accept=".ply" />
+    <input id="mesh-file-input" class="file-input" type="file" accept=".glb,.gltf" />
+
     <script>
-      const statusEl = document.getElementById("status");
-      const projectSelect = document.getElementById("project-select");
-      const objectProjectSelect = document.getElementById("object-project-select");
-      const placeProjectSelect = document.getElementById("place-project-select");
-      const launchProjectSelect = document.getElementById("launch-project-select");
+      const PROJECT_STORAGE_KEY = "deco_active_project_id";
+      const landing = document.getElementById("landing");
+      const workspace = document.getElementById("workspace");
+      const roomDropzone = document.getElementById("room-dropzone");
+      const meshDropzone = document.getElementById("mesh-dropzone");
+      const roomFileInput = document.getElementById("room-file-input");
+      const meshFileInput = document.getElementById("mesh-file-input");
+      const roomBrowseButton = document.getElementById("room-browse-button");
+      const meshBrowseButton = document.getElementById("mesh-browse-button");
+      const newSceneButton = document.getElementById("new-scene-button");
+      const sceneTitle = document.getElementById("scene-title");
+      const sceneSubtitle = document.getElementById("scene-subtitle");
+      const sceneObjectCount = document.getElementById("scene-object-count");
+      const sceneTrajectoryCount = document.getElementById("scene-trajectory-count");
+      const viewerBadge = document.getElementById("viewer-badge");
+      const stageHint = document.getElementById("stage-hint");
       const trajectorySelect = document.getElementById("trajectory-select");
       const renderTrajectorySelect = document.getElementById("render-trajectory-select");
-      const objectAssetSelect = document.getElementById("object-asset-select");
+      const trajectoryDuration = document.getElementById("trajectory-duration");
+      const trajectoryDraftName = document.getElementById("trajectory-draft-name");
+      const keyframeTimeInput = document.getElementById("keyframe-time");
+      const captureKeyframeButton = document.getElementById("capture-keyframe-button");
+      const renderButton = document.getElementById("render-button");
+      const renderFpsInput = document.getElementById("render-fps");
+      const renderWidthInput = document.getElementById("render-width");
+      const renderHeightInput = document.getElementById("render-height");
+      const statusCard = document.getElementById("status-card");
+      const statusEl = document.getElementById("status");
       const viewerFrame = document.getElementById("viewer-frame");
       const renderVideo = document.getElementById("render-video");
 
-      function setStatus(message) {{
+      const state = {
+        projectId: null,
+        roomAssetId: null,
+        objectCount: 0,
+        trajectories: [],
+      };
+
+      function setStatus(message, tone = "info") {
+        statusCard.dataset.tone = tone;
         statusEl.textContent = message;
-      }}
+      }
 
-      function addProjectOption(project) {{
-        for (const selectEl of [projectSelect, objectProjectSelect, placeProjectSelect, launchProjectSelect]) {{
-          const option = document.createElement("option");
-          option.value = project.id;
-          option.textContent = `${{project.name}} (${{project.id}})`;
-          selectEl.appendChild(option);
-        }}
-      }}
+      function showLanding() {
+        landing.hidden = false;
+        workspace.hidden = true;
+      }
 
-      function addTrajectoryOption(trajectory) {{
-        for (const selectEl of [trajectorySelect, renderTrajectorySelect]) {{
-          const option = document.createElement("option");
-          option.value = trajectory.id;
-          option.textContent = `${{trajectory.name}} (${{trajectory.id}})`;
-          selectEl.appendChild(option);
-        }}
-      }}
+      function showWorkspace() {
+        landing.hidden = true;
+        workspace.hidden = false;
+      }
 
-      function parseVector(rawValue, fallback) {{
-        const parts = String(rawValue || "")
-          .split(",")
-          .map((part) => Number(part.trim()))
-          .filter((value) => !Number.isNaN(value));
-        while (parts.length < 3) {{
-          parts.push(fallback);
-        }}
-        return parts.slice(0, 3);
-      }}
+      function formatSceneLabel(projectId) {
+        return projectId ? `Scene ${projectId.slice(-6)}` : "Fresh Scene";
+      }
 
-      async function refreshObjectAssetOptions(projectId, selectedAssetId = "") {{
-        objectAssetSelect.innerHTML = '<option value="">Select uploaded mesh</option>';
-        if (!projectId) {{
-          return;
-        }}
-        const response = await fetch(`/projects/${{projectId}}/assets`);
-        const assets = await response.json();
-        if (!response.ok) {{
-          setStatus(`Unable to load object assets: ${{assets.detail || JSON.stringify(assets)}}`);
-          return;
-        }}
-        for (const asset of assets) {{
-          if (asset.role !== "object") {{
+      function updateSceneChrome() {
+        sceneTitle.textContent = formatSceneLabel(state.projectId);
+        sceneSubtitle.textContent = state.roomAssetId
+          ? "Drop meshes, then click them inside the viewer to reveal move and rotate gizmos."
+          : "Upload a room `.ply` to activate the viewer stage.";
+        sceneObjectCount.textContent = String(state.objectCount);
+        sceneTrajectoryCount.textContent = String(state.trajectories.length);
+      }
+
+      function setViewerBadge(label, isLive = false) {
+        viewerBadge.textContent = label;
+        viewerBadge.className = isLive ? "badge badge-live" : "badge";
+      }
+
+      function fileStem(filename) {
+        return String(filename || "").replace(/\\.[^.]+$/, "");
+      }
+
+      function humanizeName(filename) {
+        const base = fileStem(filename).replace(/[_-]+/g, " ").trim();
+        return base ? base.replace(/\\b\\w/g, (match) => match.toUpperCase()) : "Mesh";
+      }
+
+      function isExtension(file, allowedExtensions) {
+        const lower = String(file?.name || "").toLowerCase();
+        return allowedExtensions.some((extension) => lower.endsWith(extension));
+      }
+
+      function nextShotName() {
+        return `Shot ${state.trajectories.length + 1}`;
+      }
+
+      function resetTrajectoryDraft() {
+        trajectoryDraftName.textContent = `Next: ${nextShotName()}`;
+      }
+
+      function populateTrajectorySelects() {
+        for (const selectEl of [trajectorySelect, renderTrajectorySelect]) {
+          selectEl.innerHTML = "";
+          if (!state.trajectories.length) {
+            const option = document.createElement("option");
+            option.value = "";
+            option.textContent = "No shots yet";
+            selectEl.appendChild(option);
             continue;
-          }}
-          const option = document.createElement("option");
-          option.value = asset.id;
-          option.textContent = `${{asset.name}} (${{asset.kind}})`;
-          objectAssetSelect.appendChild(option);
-        }}
-        if (selectedAssetId) {{
-          objectAssetSelect.value = selectedAssetId;
-        }}
-      }}
+          }
+          for (const trajectory of state.trajectories) {
+            const option = document.createElement("option");
+            option.value = trajectory.id;
+            option.textContent = `${trajectory.name} • ${trajectory.keyframes.length} kf`;
+            selectEl.appendChild(option);
+          }
+        }
+        captureKeyframeButton.disabled = state.trajectories.length === 0;
+        renderButton.disabled = state.trajectories.length === 0;
+        updateSceneChrome();
+        resetTrajectoryDraft();
+      }
 
-      document.getElementById("project-form").addEventListener("submit", async (event) => {{
-        event.preventDefault();
-        const form = new FormData(event.currentTarget);
-        const payload = {{
-          name: form.get("name"),
-          description: form.get("description") || null,
-        }};
-        const response = await fetch("/projects", {{
+      async function fetchJson(url, options = {}) {
+        const response = await fetch(url, options);
+        let payload = null;
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          payload = await response.json();
+        } else {
+          const text = await response.text();
+          payload = text ? { detail: text } : null;
+        }
+        if (!response.ok) {
+          const detail = payload?.detail || JSON.stringify(payload);
+          throw new Error(detail);
+        }
+        return payload;
+      }
+
+      async function createProject() {
+        const timestamp = new Date();
+        const label = timestamp.toLocaleString([], {
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        return await fetchJson("/projects", {
           method: "POST",
-          headers: {{ "Content-Type": "application/json" }},
-          body: JSON.stringify(payload),
-        }});
-        const data = await response.json();
-        if (!response.ok) {{
-          setStatus(`Project creation failed: ${{data.detail || JSON.stringify(data)}}`);
-          return;
-        }}
-        addProjectOption(data);
-        projectSelect.value = data.id;
-        objectProjectSelect.value = data.id;
-        placeProjectSelect.value = data.id;
-        launchProjectSelect.value = data.id;
-        await refreshObjectAssetOptions(data.id);
-        setStatus(`Created project ${{data.name}} (${{data.id}}).`);
-        event.currentTarget.reset();
-      }});
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: `Scene ${label}`,
+            description: null,
+          }),
+        });
+      }
 
-      document.getElementById("upload-form").addEventListener("submit", async (event) => {{
-        event.preventDefault();
-        const form = new FormData(event.currentTarget);
-        const projectId = form.get("project_id");
-        if (!projectId) {{
-          setStatus("Select a project first.");
-          return;
-        }}
-        setStatus("Uploading gsplat...");
-        const response = await fetch(`/projects/${{projectId}}/assets/upload-room`, {{
-          method: "POST",
-          body: form,
-        }});
-        const data = await response.json();
-        if (!response.ok) {{
-          setStatus(`Upload failed: ${{data.detail || JSON.stringify(data)}}`);
-          return;
-        }}
-        launchProjectSelect.value = projectId;
-        setStatus(`Uploaded room asset ${{data.asset.name}} (${{data.asset.id}}).`);
-      }});
+      async function fetchProject(projectId) {
+        return await fetchJson(`/projects/${projectId}`);
+      }
 
-      document.getElementById("upload-object-form").addEventListener("submit", async (event) => {{
-        event.preventDefault();
-        const form = new FormData(event.currentTarget);
-        const projectId = form.get("project_id");
-        if (!projectId) {{
-          setStatus("Select a project before uploading a mesh.");
+      async function fetchTrajectories() {
+        if (!state.projectId) {
+          state.trajectories = [];
+          populateTrajectorySelects();
           return;
-        }}
-        setStatus("Uploading mesh object...");
-        const response = await fetch(`/projects/${{projectId}}/assets/upload-object`, {{
-          method: "POST",
-          body: form,
-        }});
-        const data = await response.json();
-        if (!response.ok) {{
-          setStatus(`Mesh upload failed: ${{data.detail || JSON.stringify(data)}}`);
-          return;
-        }}
-        placeProjectSelect.value = projectId;
-        await refreshObjectAssetOptions(projectId, data.asset.id);
-        setStatus(`Uploaded mesh asset ${{data.asset.name}} (${{data.asset.id}}).`);
-      }});
+        }
+        state.trajectories = await fetchJson(`/projects/${state.projectId}/trajectories`);
+        populateTrajectorySelects();
+      }
 
-      document.getElementById("place-object-form").addEventListener("submit", async (event) => {{
-        event.preventDefault();
-        const form = new FormData(event.currentTarget);
-        const projectId = form.get("project_id");
-        const assetId = form.get("asset_id");
-        if (!projectId || !assetId) {{
-          setStatus("Select a project and uploaded mesh before placing an object.");
-          return;
-        }}
-        const payload = {{
-          name: form.get("name"),
-          asset_id: assetId,
-          transform: {{
-            position: parseVector(form.get("position"), 0.0),
-            rotation_euler: parseVector(form.get("rotation"), 0.0),
-            scale: parseVector(form.get("scale"), 1.0),
-          }},
-          visible: true,
-          metadata: {{}},
-        }};
-        const response = await fetch(`/projects/${{projectId}}/objects`, {{
-          method: "POST",
-          headers: {{ "Content-Type": "application/json" }},
-          body: JSON.stringify(payload),
-        }});
-        const data = await response.json();
-        if (!response.ok) {{
-          setStatus(`Object placement failed: ${{data.detail || JSON.stringify(data)}}`);
-          return;
-        }}
-        launchProjectSelect.value = projectId;
-        setStatus(`Placed object ${{data.name}} (${{data.id}}). If the viewer is already open, it appears there immediately.`);
-      }});
+      function applyManifest(manifest) {
+        state.projectId = manifest.id;
+        state.roomAssetId = manifest.scene.room_asset_id;
+        state.objectCount = manifest.scene.objects.length;
+        localStorage.setItem(PROJECT_STORAGE_KEY, manifest.id);
+        updateSceneChrome();
+      }
 
-      for (const selectEl of [objectProjectSelect, placeProjectSelect]) {{
-        selectEl.addEventListener("change", async (event) => {{
-          await refreshObjectAssetOptions(event.target.value);
-        }});
-      }}
-
-      document.getElementById("launch-form").addEventListener("submit", async (event) => {{
-        event.preventDefault();
-        const form = new FormData(event.currentTarget);
-        const projectId = form.get("project_id");
-        if (!projectId) {{
-          setStatus("Select a project first.");
-          return;
-        }}
-        setStatus("Launching viewer...");
-        const response = await fetch(`/projects/${{projectId}}/viewer/load-room`, {{
-          method: "POST",
-          headers: {{ "Content-Type": "application/json" }},
-          body: JSON.stringify({{}}),
-        }});
-        const data = await response.json();
-        if (!response.ok) {{
-          setStatus(`Viewer launch failed: ${{data.detail || JSON.stringify(data)}}`);
-          return;
-        }}
-        viewerFrame.src = data.viewer_url;
-        setStatus(`Viewer loaded for room ${{data.asset_id}} with ${{data.loaded_object_ids.length}} object(s) at ${{data.viewer_url}}`);
-      }});
-
-      document.getElementById("trajectory-form").addEventListener("submit", async (event) => {{
-        event.preventDefault();
-        const projectId = launchProjectSelect.value || projectSelect.value;
-        if (!projectId) {{
-          setStatus("Create or select a project first.");
-          return;
-        }}
-        const form = new FormData(event.currentTarget);
-        const payload = {{
-          name: form.get("name"),
-          duration_seconds: Number(form.get("duration_seconds") || 5),
-        }};
-        const response = await fetch(`/projects/${{projectId}}/trajectories`, {{
-          method: "POST",
-          headers: {{ "Content-Type": "application/json" }},
-          body: JSON.stringify(payload),
-        }});
-        const data = await response.json();
-        if (!response.ok) {{
-          setStatus(`Trajectory creation failed: ${{data.detail || JSON.stringify(data)}}`);
-          return;
-        }}
-        addTrajectoryOption(data);
-        trajectorySelect.value = data.id;
-        renderTrajectorySelect.value = data.id;
-        setStatus(`Created trajectory ${{data.name}} (${{data.id}}).`);
-        event.currentTarget.reset();
-      }});
-
-      document.getElementById("keyframe-form").addEventListener("submit", async (event) => {{
-        event.preventDefault();
-        const projectId = launchProjectSelect.value || projectSelect.value;
-        const form = new FormData(event.currentTarget);
-        const trajectoryId = form.get("trajectory_id");
-        if (!projectId || !trajectoryId) {{
-          setStatus("Select a project and trajectory first.");
-          return;
-        }}
-        const payload = {{
-          time_seconds: Number(form.get("time_seconds") || 0),
-        }};
-        const response = await fetch(`/projects/${{projectId}}/trajectories/${{trajectoryId}}/capture-keyframe`, {{
-          method: "POST",
-          headers: {{ "Content-Type": "application/json" }},
-          body: JSON.stringify(payload),
-        }});
-        const data = await response.json();
-        if (!response.ok) {{
-          setStatus(`Keyframe capture failed: ${{data.detail || JSON.stringify(data)}}`);
-          return;
-        }}
-        setStatus(`Captured keyframe. Trajectory now has ${{data.keyframes.length}} keyframes.`);
-      }});
-
-      document.getElementById("render-form").addEventListener("submit", async (event) => {{
-        event.preventDefault();
-        const projectId = launchProjectSelect.value || projectSelect.value;
-        const form = new FormData(event.currentTarget);
-        const trajectoryId = form.get("trajectory_id");
-        if (!projectId || !trajectoryId) {{
-          setStatus("Select a project and trajectory first.");
-          return;
-        }}
-        setStatus("Rendering trajectory video...");
-        const payload = {{
-          fps: Number(form.get("fps") || 24),
-          width: Number(form.get("width") || 1280),
-          height: Number(form.get("height") || 720),
-        }};
-        const response = await fetch(`/projects/${{projectId}}/trajectories/${{trajectoryId}}/render`, {{
-          method: "POST",
-          headers: {{ "Content-Type": "application/json" }},
-          body: JSON.stringify(payload),
-        }});
-        const data = await response.json();
-        if (!response.ok) {{
-          setStatus(`Render failed: ${{data.detail || JSON.stringify(data)}}`);
-          return;
-        }}
-        renderVideo.src = data.artifact_url;
+      function clearWorkspaceState() {
+        state.projectId = null;
+        state.roomAssetId = null;
+        state.objectCount = 0;
+        state.trajectories = [];
+        localStorage.removeItem(PROJECT_STORAGE_KEY);
+        viewerFrame.src = "about:blank";
+        renderVideo.removeAttribute("src");
         renderVideo.load();
-        setStatus(`Rendered ${{data.filename}} with ${{data.frame_count}} frames.`);
-      }});
+        populateTrajectorySelects();
+        setViewerBadge("waiting");
+        stageHint.hidden = false;
+        stageHint.innerHTML = "<div><strong>The viewer will appear here.</strong><div>Upload a room first, then drop meshes into the scene.</div></div>";
+        updateSceneChrome();
+      }
 
-      if (placeProjectSelect.value) {{
-        refreshObjectAssetOptions(placeProjectSelect.value);
-      }}
+      async function launchViewer(assetId = null) {
+        if (!state.projectId) {
+          return;
+        }
+        setViewerBadge("launching");
+        stageHint.hidden = false;
+        stageHint.innerHTML = "<div><strong>Launching viewer…</strong><div>Preparing the live stage for your room scene.</div></div>";
+        try {
+          const data = await fetchJson(`/projects/${state.projectId}/viewer/load-room`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(assetId ? { asset_id: assetId } : {}),
+          });
+          viewerFrame.src = data.viewer_url;
+          state.roomAssetId = data.asset_id;
+          state.objectCount = data.loaded_object_ids.length;
+          setViewerBadge("viewer live", true);
+          stageHint.hidden = true;
+          updateSceneChrome();
+          setStatus(`Viewer ready at ${data.viewer_url}. Drop meshes to add them instantly, then drag them in the viewer.`, "success");
+        } catch (error) {
+          setViewerBadge("viewer error");
+          stageHint.hidden = false;
+          stageHint.innerHTML = "<div><strong>Viewer unavailable.</strong><div>Check the status panel for the startup error.</div></div>";
+          setStatus(`Viewer launch failed: ${error.message}`, "error");
+        }
+      }
+
+      async function startRoomScene(file) {
+        if (!isExtension(file, [".ply"])) {
+          setStatus("Room uploads must be `.ply` Gaussian splat files.", "error");
+          return;
+        }
+        showWorkspace();
+        clearWorkspaceState();
+        setStatus(`Creating a fresh scene for ${file.name}…`);
+        setViewerBadge("uploading");
+        stageHint.hidden = false;
+        stageHint.innerHTML = "<div><strong>Uploading room…</strong><div>Setting up a new scene and preparing the viewer.</div></div>";
+        try {
+          const project = await createProject();
+          applyManifest(project);
+          const formData = new FormData();
+          formData.append("file", file);
+          const upload = await fetchJson(`/projects/${project.id}/assets/upload-room`, {
+            method: "POST",
+            body: formData,
+          });
+          const manifest = await fetchProject(project.id);
+          applyManifest(manifest);
+          await fetchTrajectories();
+          await launchViewer(upload.asset.id);
+        } catch (error) {
+          setStatus(`Room upload failed: ${error.message}`, "error");
+          showLanding();
+          clearWorkspaceState();
+        }
+      }
+
+      function nextMeshPosition() {
+        const index = state.objectCount;
+        const column = index % 4;
+        const row = Math.floor(index / 4);
+        return [Number(((column - 1.5) * 0.72).toFixed(2)), 0.0, Number((-row * 0.9).toFixed(2))];
+      }
+
+      async function addMeshToScene(file) {
+        if (!state.projectId || !state.roomAssetId) {
+          setStatus("Load a room `.ply` first, then drop mesh files into the scene.", "error");
+          return;
+        }
+        if (!isExtension(file, [".glb", ".gltf"])) {
+          setStatus("Mesh uploads must be `.glb` or self-contained `.gltf` files.", "error");
+          return;
+        }
+        setStatus(`Adding ${file.name} to the scene…`);
+        try {
+          const uploadData = new FormData();
+          uploadData.append("file", file);
+          const asset = await fetchJson(`/projects/${state.projectId}/assets/upload-object`, {
+            method: "POST",
+            body: uploadData,
+          });
+          const response = await fetchJson(`/projects/${state.projectId}/objects`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: humanizeName(file.name),
+              asset_id: asset.asset.id,
+              transform: {
+                position: nextMeshPosition(),
+                rotation_euler: [0.0, 0.0, 0.0],
+                scale: [1.0, 1.0, 1.0],
+              },
+              visible: true,
+              metadata: {},
+            }),
+          });
+          const manifest = await fetchProject(state.projectId);
+          applyManifest(manifest);
+          setStatus(`Added ${response.name}. It should appear in the live viewer now; click it there to move or rotate it.`, "success");
+        } catch (error) {
+          setStatus(`Mesh upload failed: ${error.message}`, "error");
+        }
+      }
+
+      function attachDropzone(zone, input, extensions, handler) {
+        for (const eventName of ["dragenter", "dragover"]) {
+          zone.addEventListener(eventName, (event) => {
+            event.preventDefault();
+            zone.classList.add("is-dragging");
+          });
+        }
+        for (const eventName of ["dragleave", "drop"]) {
+          zone.addEventListener(eventName, (event) => {
+            event.preventDefault();
+            zone.classList.remove("is-dragging");
+          });
+        }
+        zone.addEventListener("drop", async (event) => {
+          const file = event.dataTransfer?.files?.[0];
+          if (!file) {
+            return;
+          }
+          if (!isExtension(file, extensions)) {
+            setStatus(`Expected ${extensions.join(" or ")} for this drop target.`, "error");
+            return;
+          }
+          await handler(file);
+        });
+        zone.addEventListener("click", () => input.click());
+        zone.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            input.click();
+          }
+        });
+        input.addEventListener("change", async () => {
+          const file = input.files?.[0];
+          input.value = "";
+          if (file) {
+            await handler(file);
+          }
+        });
+      }
+
+      async function restoreSession() {
+        const projectId = localStorage.getItem(PROJECT_STORAGE_KEY);
+        if (!projectId) {
+          showLanding();
+          clearWorkspaceState();
+          setStatus("Drop a room `.ply` to begin.");
+          return;
+        }
+        try {
+          const manifest = await fetchProject(projectId);
+          applyManifest(manifest);
+          await fetchTrajectories();
+          if (!manifest.scene.room_asset_id) {
+            showLanding();
+            setStatus("Your saved scene has no room asset yet. Drop a `.ply` to continue.");
+            return;
+          }
+          showWorkspace();
+          await launchViewer();
+        } catch (_error) {
+          clearWorkspaceState();
+          showLanding();
+          setStatus("Starting fresh. Drop a room `.ply` to begin.");
+        }
+      }
+
+      document.getElementById("trajectory-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!state.projectId) {
+          setStatus("Load a room first, then create a shot.", "error");
+          return;
+        }
+        setStatus("Creating a new camera shot…");
+        try {
+          const trajectory = await fetchJson(`/projects/${state.projectId}/trajectories`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: nextShotName(),
+              duration_seconds: Number(trajectoryDuration.value || 5),
+            }),
+          });
+          state.trajectories.push(trajectory);
+          populateTrajectorySelects();
+          trajectorySelect.value = trajectory.id;
+          renderTrajectorySelect.value = trajectory.id;
+          setStatus(`Created ${trajectory.name}. Capture camera poses whenever you're ready.`, "success");
+        } catch (error) {
+          setStatus(`Trajectory creation failed: ${error.message}`, "error");
+        }
+      });
+
+      document.getElementById("keyframe-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!state.projectId || !trajectorySelect.value) {
+          setStatus("Create and select a shot first, then capture a keyframe.", "error");
+          return;
+        }
+        setStatus("Capturing the current viewer camera…");
+        try {
+          const data = await fetchJson(
+            `/projects/${state.projectId}/trajectories/${trajectorySelect.value}/capture-keyframe`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                time_seconds: Number(keyframeTimeInput.value || 0),
+              }),
+            },
+          );
+          state.trajectories = state.trajectories.map((trajectory) =>
+            trajectory.id === data.id ? data : trajectory,
+          );
+          populateTrajectorySelects();
+          trajectorySelect.value = data.id;
+          renderTrajectorySelect.value = data.id;
+          setStatus(`Captured a keyframe for ${data.name}. It now has ${data.keyframes.length} keyframes.`, "success");
+        } catch (error) {
+          setStatus(`Keyframe capture failed: ${error.message}`, "error");
+        }
+      });
+
+      document.getElementById("render-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!state.projectId || !renderTrajectorySelect.value) {
+          setStatus("Choose a shot to render first.", "error");
+          return;
+        }
+        setStatus("Rendering trajectory video…");
+        try {
+          const data = await fetchJson(
+            `/projects/${state.projectId}/trajectories/${renderTrajectorySelect.value}/render`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                fps: Number(renderFpsInput.value || 24),
+                width: Number(renderWidthInput.value || 1280),
+                height: Number(renderHeightInput.value || 720),
+              }),
+            },
+          );
+          renderVideo.src = data.artifact_url;
+          renderVideo.load();
+          setStatus(`Rendered ${data.filename} at ${data.fps} fps with ${data.frame_count} frames.`, "success");
+        } catch (error) {
+          setStatus(`Render failed: ${error.message}`, "error");
+        }
+      });
+
+      newSceneButton.addEventListener("click", () => {
+        clearWorkspaceState();
+        showLanding();
+        setStatus("Drop a room `.ply` to start a new scene.");
+      });
+
+      roomBrowseButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        roomFileInput.click();
+      });
+      meshBrowseButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        meshFileInput.click();
+      });
+
+      attachDropzone(roomDropzone, roomFileInput, [".ply"], startRoomScene);
+      attachDropzone(meshDropzone, meshFileInput, [".glb", ".gltf"], addMeshToScene);
+
+      clearWorkspaceState();
+      showLanding();
+      resetTrajectoryDraft();
+      restoreSession();
     </script>
   </body>
 </html>"""

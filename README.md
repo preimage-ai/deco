@@ -7,8 +7,8 @@ Python-first application for furnishing a room `gsplat` with 3D assets, authorin
 Current runnable scope:
 
 - FastAPI backend for project manifests, assets, scene objects, and trajectories
-- Room `gsplat .ply` upload flow
-- Minimal browser editor at `/editor`
+- Drag-and-drop room `gsplat .ply` upload flow
+- Dark-themed browser editor at `/editor`
 - `viser`-based room viewer launched from the editor
 - Mesh object upload and placement for `.glb` and self-contained `.gltf` assets
 
@@ -55,13 +55,12 @@ The current `/editor` page is a temporary frontend served directly by FastAPI.
 
 Use it like this:
 
-1. Create a project
-2. Upload a room `gsplat` PLY file
-3. Upload a mesh object as `.glb` or self-contained `.gltf`
-4. Place the object into the scene
-5. Click `Launch viewer`
-6. The room and visible objects should load in an embedded `viser` viewer
-7. Click a mesh in the viewer to reveal move and rotate gizmos, then drag it interactively
+1. Drop a room `gsplat` PLY file onto the landing screen
+2. The editor creates a fresh scene and launches the viewer automatically
+3. Drop mesh objects as `.glb` or self-contained `.gltf` files into the mesh dropzone
+4. New meshes appear in the active viewer without reloading it
+5. Click a mesh in the viewer to reveal move and rotate gizmos, then drag it interactively
+6. Create shots, capture keyframes, and render trajectory MP4s from the side rail
 
 Once the viewer is open, newly placed objects are synced into the active scene without relaunching it.
 

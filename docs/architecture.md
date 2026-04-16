@@ -8,13 +8,11 @@ Current runnable stack:
 
 The current viewer path is intentionally narrow:
 
-1. Create a project
-2. Upload a room `gsplat` PLY
-3. Upload a mesh object (`.glb` or self-contained `.gltf`)
-4. Place the object into the scene
-5. Launch the room viewer
-6. Inspect the splat and meshes in the embedded `viser` frame
-7. Click a mesh to edit its transform with interactive gizmos
+1. Drop a room `gsplat` PLY into the landing screen
+2. Auto-create a scene and launch the room viewer
+3. Drop mesh objects (`.glb` or self-contained `.gltf`) into the active workspace
+4. Inspect the splat and meshes in the embedded `viser` frame
+5. Click a mesh to edit its transform with interactive gizmos
 
 While a viewer session is active, object create, update, and delete operations are reconciled into the open scene without reloading the room splat.
 
