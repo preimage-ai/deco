@@ -1,6 +1,16 @@
-# deco
+# Deco Room GSplat Studio
 
-Python-first application for furnishing a room `gsplat` with 3D assets, authoring camera trajectories, and rendering enhanced output videos through a web-based editor.
+Browser-based tooling for turning room photos or existing `gsplat` captures into editable scenes, placing 3D assets, authoring camera moves, and rendering enhanced output through a FastAPI-backed workspace.
+
+## Screenshots
+
+### Editor landing flow
+
+![Deco editor landing flow](docs/images/editor-overview.png)
+
+### API docs
+
+![Deco API docs](docs/images/api-docs.png)
 
 ## Current Status
 

@@ -170,7 +170,7 @@ def get_settings() -> Settings:
     da3_device = _setting("DECO_DA3_DEVICE", "auto") or "auto"
     da3_process_res = int(_setting("DECO_DA3_PROCESS_RES", "504") or "504")
     return Settings(
-        app_name="deco API",
+        app_name="Deco Room GSplat Studio",
         projects_root=projects_root,
         viewer_host=viewer_host,
         viewer_port=viewer_port,

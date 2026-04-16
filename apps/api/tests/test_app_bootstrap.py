@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 
+from fastapi.testclient import TestClient
+
 from apps.api.app.deps import get_generation_service, get_repo
 from apps.api.app.main import create_app
 
@@ -30,3 +32,21 @@ def test_app_registers_core_routes(tmp_path) -> None:
     assert "/projects/{project_id}/renders/{filename}/enhance" in routes
     assert "/projects/{project_id}/viewer/select-object" in routes
     assert "/projects/{project_id}/viewer/save-object" in routes
+
+
+def test_docs_and_favicon_have_custom_branding(tmp_path) -> None:
+    os.environ["DECO_PROJECTS_ROOT"] = str(tmp_path / "projects")
+    get_repo.cache_clear()
+    get_generation_service.cache_clear()
+
+    client = TestClient(create_app())
+
+    favicon_response = client.get("/favicon.svg")
+    assert favicon_response.status_code == 200
+    assert favicon_response.headers["content-type"] == "image/svg+xml"
+    assert "<svg" in favicon_response.text
+
+    docs_response = client.get("/docs")
+    assert docs_response.status_code == 200
+    assert "Deco Room GSplat Studio Docs" in docs_response.text
+    assert "/favicon.svg" in docs_response.text

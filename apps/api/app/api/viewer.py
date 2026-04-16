@@ -32,7 +32,12 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>deco editor</title>
+    <title>Deco | Room GSplat Studio</title>
+    <meta
+      name="description"
+      content="Generate a room gsplat from images or open an existing splat to stage 3D objects, author shots, and render from the browser."
+    />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <style>
       :root {
         color-scheme: dark;
@@ -101,27 +106,138 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         place-items: center;
       }
       .landing-card {
-        width: min(820px, 100%);
-        padding: 36px;
+        position: relative;
+        overflow: hidden;
+        width: min(1120px, 100%);
+        padding: 40px;
         border-radius: var(--radius-xl);
         background: linear-gradient(145deg, rgba(16, 31, 53, 0.92), rgba(10, 18, 31, 0.94));
         border: 1px solid var(--line-strong);
         box-shadow: var(--shadow);
       }
+      .landing-card::after {
+        content: "";
+        position: absolute;
+        inset: auto -120px -140px auto;
+        width: 320px;
+        height: 320px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(77, 210, 255, 0.18), transparent 68%);
+        pointer-events: none;
+      }
+      .landing-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.45fr) minmax(300px, 0.95fr);
+        gap: 28px;
+        align-items: start;
+        margin-bottom: 28px;
+      }
+      .landing-side {
+        display: grid;
+        gap: 14px;
+      }
+      .hero-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        width: fit-content;
+        padding: 10px 14px;
+        border-radius: 999px;
+        border: 1px solid rgba(110, 231, 200, 0.26);
+        background: rgba(110, 231, 200, 0.08);
+        color: var(--accent);
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      .hero-kicker strong {
+        color: var(--ink);
+        letter-spacing: 0.02em;
+      }
+      .hero-intro {
+        max-width: 64ch;
+        font-size: 17px;
+      }
+      .hero-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .hero-stat {
+        display: grid;
+        gap: 6px;
+        padding: 16px;
+        border-radius: 18px;
+        border: 1px solid rgba(149, 179, 222, 0.14);
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .hero-stat strong {
+        font-size: 20px;
+        letter-spacing: -0.04em;
+      }
+      .hero-stat span {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .hero-panel {
+        display: grid;
+        gap: 14px;
+        padding: 20px;
+        border-radius: 22px;
+        border: 1px solid rgba(149, 179, 222, 0.16);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+      }
+      .hero-panel h2 {
+        margin: 0;
+        font-size: 18px;
+        letter-spacing: -0.03em;
+      }
+      .hero-list {
+        display: grid;
+        gap: 10px;
+      }
+      .hero-list-item {
+        display: grid;
+        gap: 4px;
+      }
+      .hero-list-item strong {
+        font-size: 14px;
+      }
+      .hero-list-item span {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .section-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+      .section-label::before {
+        content: "";
+        width: 24px;
+        height: 1px;
+        background: currentColor;
+      }
       .workflow-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 16px;
+        gap: 18px;
       }
       .workflow-card {
         width: 100%;
-        padding: 24px;
+        padding: 26px;
         border-radius: calc(var(--radius-xl) - 6px);
         border: 1px solid var(--line);
         background: linear-gradient(180deg, rgba(13, 26, 46, 0.9), rgba(9, 16, 30, 0.92));
         color: var(--ink);
         display: grid;
-        gap: 14px;
+        gap: 16px;
         text-align: left;
         box-shadow: var(--shadow);
         transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
@@ -136,10 +252,69 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         font-size: 24px;
         letter-spacing: -0.04em;
       }
+      .workflow-card-copy {
+        display: grid;
+        gap: 8px;
+      }
+      .workflow-card-top,
+      .workflow-card-meta,
+      .workflow-card-footer {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .workflow-card-top {
+        justify-content: space-between;
+        align-items: center;
+      }
+      .workflow-card-meta {
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
       .workflow-card p {
         margin: 0;
         color: var(--muted);
         line-height: 1.6;
+      }
+      .workflow-points {
+        display: grid;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .workflow-points div::before {
+        content: "•";
+        margin-right: 8px;
+        color: var(--accent);
+      }
+      .workflow-card-footer {
+        align-items: center;
+        justify-content: space-between;
+      }
+      .flow-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(149, 179, 222, 0.16);
+        background: rgba(255, 255, 255, 0.03);
+        font-size: 12px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .card-link {
+        color: var(--ink);
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .flow-note {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.55;
       }
       .landing-copy,
       .workspace-header-copy,
@@ -476,7 +651,14 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         .shell {
           padding: 18px;
         }
+        .landing-card {
+          padding: 24px;
+        }
+        .landing-hero,
         .workflow-grid {
+          grid-template-columns: 1fr;
+        }
+        .hero-grid {
           grid-template-columns: 1fr;
         }
         .workspace-grid {
@@ -502,21 +684,94 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
 
       <section id="landing" class="landing">
         <div class="landing-card">
-          <div class="landing-copy">
-            <span class="eyebrow">deco studio</span>
-            <h1>Choose your gsplat workflow.</h1>
-            <p>Start from images with Depth Anything 3 or jump straight into editing an existing room splat. Both paths land in the same live viewer and render workspace.</p>
+          <div class="landing-hero">
+            <div class="landing-copy">
+              <span class="eyebrow">deco studio</span>
+              <span class="hero-kicker">Room Scenes <strong>from capture to render</strong></span>
+              <h1>Build a room scene without leaving the browser.</h1>
+              <p class="hero-intro">Create a usable room gsplat from photos with DA3 or open an existing `.ply` immediately. Either way, you land in the same workspace for object placement, camera paths, and final video output.</p>
+              <div class="hero-grid">
+                <div class="hero-stat">
+                  <strong>2 flows</strong>
+                  <span>Start from source photos or from a finished room splat.</span>
+                </div>
+                <div class="hero-stat">
+                  <strong>1 workspace</strong>
+                  <span>Place meshes, manage scene objects, and stage camera moves.</span>
+                </div>
+                <div class="hero-stat">
+                  <strong>Fast handoff</strong>
+                  <span>The viewer launches inline so layout and review happen in one place.</span>
+                </div>
+              </div>
+            </div>
+            <aside class="landing-side">
+              <div class="hero-panel">
+                <h2>What you can do here</h2>
+                <div class="hero-list">
+                  <div class="hero-list-item">
+                    <strong>Generate a room from overlapping images</strong>
+                    <span>Use Depth Anything 3 to create a new room splat and continue editing right away.</span>
+                  </div>
+                  <div class="hero-list-item">
+                    <strong>Furnish and refine an existing room</strong>
+                    <span>Upload a `.ply`, add meshes, adjust transforms, and keep the manifest in sync.</span>
+                  </div>
+                  <div class="hero-list-item">
+                    <strong>Capture motion and export video</strong>
+                    <span>Author shots, render MP4 output, and optionally send the final clip through Runway.</span>
+                  </div>
+                </div>
+              </div>
+            </aside>
+          </div>
+          <div class="stack">
+            <span class="section-label">Choose Your Starting Point</span>
           </div>
           <div class="workflow-grid">
             <button id="workflow-create-button" class="workflow-card" type="button">
-              <span class="pill">Depth Anything 3</span>
-              <h2>Gsplat creation workflow</h2>
-              <p>Drop a set of overlapping images, generate a fresh room splat, preview it immediately, and save the resulting `.ply` to disk.</p>
+              <div class="workflow-card-top">
+                <span class="pill">With DA3</span>
+                <span class="flow-chip">Image to gsplat</span>
+              </div>
+              <div class="workflow-card-copy">
+                <h2>Create a room from photos</h2>
+                <p>Start with overlapping room images, let Depth Anything 3 build the base splat, then continue directly into staging and rendering.</p>
+              </div>
+              <div class="workflow-card-meta">
+                <span>Best when you only have source images</span>
+              </div>
+              <div class="workflow-points">
+                <div>Upload a set of room photos in one step</div>
+                <div>Preview the generated `.ply` immediately in the live viewer</div>
+                <div>Download the room splat after generation completes</div>
+              </div>
+              <div class="workflow-card-footer">
+                <span class="card-link">Open DA3 Flow</span>
+                <span class="flow-note">Longer first run if model weights need to load.</span>
+              </div>
             </button>
             <button id="workflow-edit-button" class="workflow-card" type="button">
-              <span class="pill">Editor + render</span>
-              <h2>Normal gsplat editing and video rendering workflow</h2>
-              <p>Open an existing room `.ply`, place `.glb` or `.gltf` meshes into the live viewer, and capture keyframes for video rendering.</p>
+              <div class="workflow-card-top">
+                <span class="pill">Without DA3</span>
+                <span class="flow-chip">Direct edit</span>
+              </div>
+              <div class="workflow-card-copy">
+                <h2>Open an existing room gsplat</h2>
+                <p>Bring your own `.ply` and go straight into composition. This path skips generation and is better when the room capture is already done.</p>
+              </div>
+              <div class="workflow-card-meta">
+                <span>Best when you already have the room splat</span>
+              </div>
+              <div class="workflow-points">
+                <div>Launch the viewer as soon as the room file is uploaded</div>
+                <div>Add `.glb` or self-contained `.gltf` objects into the scene</div>
+                <div>Create camera shots and export render-ready videos</div>
+              </div>
+              <div class="workflow-card-footer">
+                <span class="card-link">Open Editor Flow</span>
+                <span class="flow-note">Fastest path into placement, layout, and render.</span>
+              </div>
             </button>
           </div>
         </div>
@@ -526,8 +781,8 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         <div class="landing-card">
           <div class="landing-copy">
             <span class="eyebrow">existing gsplat</span>
-            <h1>Drop a Gaussian Splat to begin.</h1>
-            <p>Bring in a room `.ply` file and the editor will create a fresh scene, launch the viewer, and get you ready to place meshes immediately.</p>
+            <h1>Open a room and start staging.</h1>
+            <p>Upload an existing room `.ply` to enter the editor immediately. Deco will create a scene, launch the viewer, and prepare the workspace for object placement and camera work.</p>
           </div>
           <div id="room-dropzone" class="dropzone" tabindex="0">
             <div class="chip-row">
@@ -540,7 +795,7 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
             <div class="cta-row">
               <button id="room-browse-button" class="button button-primary" type="button">Choose `.ply`</button>
               <button id="editing-back-button" class="button button-secondary" type="button">Back</button>
-              <span class="ghost-note">The first drop creates a new scene automatically.</span>
+              <span class="ghost-note">Best for teams that already have the room capture and want to move straight into layout.</span>
             </div>
           </div>
         </div>
@@ -550,8 +805,8 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         <div class="landing-card">
           <div class="landing-copy">
             <span class="eyebrow">image to gsplat</span>
-            <h1>Drop images to generate a room splat.</h1>
-            <p>Upload a small set of overlapping room photos and deco will run Depth Anything 3, open the resulting gsplat in the viewer, and give you a one-click download for the generated `.ply`.</p>
+            <h1>Generate a room from source photos.</h1>
+            <p>Upload a set of overlapping room images and deco will run the DA3 pipeline, open the generated room in the viewer, and carry you straight into editing once the splat is ready.</p>
           </div>
           <div id="generation-dropzone" class="dropzone" tabindex="0">
             <div class="chip-row">
@@ -564,7 +819,7 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
             <div class="cta-row">
               <button id="generation-browse-button" class="button button-primary" type="button">Choose images</button>
               <button id="creation-back-button" class="button button-secondary" type="button">Back</button>
-              <span class="ghost-note">Overlapping views usually produce a stronger splat.</span>
+              <span class="ghost-note">Use overlapping views of the same room area for a cleaner base splat.</span>
             </div>
           </div>
         </div>

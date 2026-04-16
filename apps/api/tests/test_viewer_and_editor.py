@@ -34,6 +34,8 @@ def test_editor_and_viewer_routes_registered(tmp_path: Path) -> None:
 def test_editor_page_includes_mesh_object_workflow(repo) -> None:
     html = editor_page(repo)
 
+    assert "<title>Deco | Room GSplat Studio</title>" in html
+    assert 'rel="icon" href="/favicon.svg"' in html
     assert 'id="workflow-create-button"' in html
     assert 'id="workflow-edit-button"' in html
     assert 'id="room-dropzone"' in html
