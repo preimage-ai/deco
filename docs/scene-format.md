@@ -1,3 +1,35 @@
 # Scene Format
 
-Initial scaffold. Project and scene manifest formats will be defined before feature work begins.
+The v0 manifest is a single JSON document persisted per project.
+
+Top-level sections:
+
+- `schema_version`
+- `id`, `name`, `description`
+- `assets`
+- `scene`
+- `trajectories`
+- `created_at`, `updated_at`
+
+The `scene` section currently stores:
+
+- `room_asset_id`
+- `objects`
+
+Each object stores:
+
+- `id`
+- `name`
+- `asset_id`
+- `transform`
+- `visible`
+- `metadata`
+
+Each trajectory stores:
+
+- `id`
+- `name`
+- `spline`
+- `duration_seconds`
+- `velocity`
+- `keyframes`
