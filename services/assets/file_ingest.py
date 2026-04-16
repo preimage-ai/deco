@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 
 from services.assets.glb_ingest import GlbMetadata, inspect_glb
+from services.assets.gltf_ingest import GltfMetadata, inspect_gltf
 from services.gsplat.ply_parser import PlyMetadata, inspect_ply
 from services.scene_core.project_manifest import AssetRecord
 from services.storage.local_fs import ProjectNotFoundError, ProjectRepository
@@ -34,15 +35,27 @@ class AssetIngestService:
 
     def ingest_object_glb(self, project_id: str, name: str, source_path: Path) -> AssetRecord:
         """Store a GLB object file and register it as an object asset."""
+        return self.ingest_object_mesh(project_id=project_id, name=name, source_path=source_path)
+
+    def ingest_object_mesh(self, project_id: str, name: str, source_path: Path) -> AssetRecord:
+        """Store a GLB or self-contained GLTF object file and register it as an object asset."""
         self.repo.get_project(project_id)
         stored_path = self._copy_into_project(project_id, source_path, "objects")
-        metadata = inspect_glb(stored_path)
+        suffix = stored_path.suffix.lower()
+        if suffix == ".gltf":
+            metadata = inspect_gltf(stored_path)
+            kind = "gltf"
+            metadata_dict = self._gltf_metadata_dict(metadata)
+        else:
+            metadata = inspect_glb(stored_path)
+            kind = "glb"
+            metadata_dict = self._glb_metadata_dict(metadata)
         asset = AssetRecord(
             name=name,
-            kind="glb",
+            kind=kind,
             role="object",
             source_uri=self._relative_uri(stored_path),
-            metadata=self._glb_metadata_dict(metadata),
+            metadata=metadata_dict,
         )
         manifest = self.repo.add_asset(project_id, asset)
         return next(item for item in manifest.assets if item.id == asset.id)
@@ -94,3 +107,13 @@ class AssetIngestService:
             "file_size": metadata.file_size,
         }
 
+    @staticmethod
+    def _gltf_metadata_dict(metadata: GltfMetadata) -> dict[str, str | int]:
+        return {
+            "version": metadata.version,
+            "mesh_count": metadata.mesh_count,
+            "node_count": metadata.node_count,
+            "buffer_count": metadata.buffer_count,
+            "image_count": metadata.image_count,
+            "embedded_resource_count": metadata.embedded_resource_count,
+        }

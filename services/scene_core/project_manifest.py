@@ -32,7 +32,7 @@ class AssetRecord(BaseModel):
 
     id: str = Field(default_factory=lambda: new_id("asset"))
     name: str
-    kind: Literal["gsplat_ply", "glb", "generated_glb"] = "glb"
+    kind: Literal["gsplat_ply", "glb", "gltf", "generated_glb"] = "glb"
     role: Literal["room", "object"] = "object"
     source_uri: str | None = None
     preview_uri: str | None = None

@@ -11,6 +11,7 @@ from apps.api.app.deps import get_asset_ingest_service, get_repo
 from apps.api.app.schemas.asset import AssetCreateRequest, AssetUpdateRequest
 from apps.api.app.schemas.upload import AssetUploadResponse
 from services.assets.glb_ingest import InvalidGlbError
+from services.assets.gltf_ingest import InvalidGltfError
 from services.assets.file_ingest import AssetIngestService
 from services.gsplat.ply_parser import InvalidPlyError
 from services.scene_core.project_manifest import AssetRecord
@@ -58,7 +59,8 @@ async def upload_room_asset(
     try:
         asset = await _store_upload_and_ingest(
             file=file,
-            suffix=".ply",
+            allowed_suffixes={".ply"},
+            default_suffix=".ply",
             ingest_fn=lambda temp_path: ingest.ingest_room_gsplat(
                 project_id=project_id,
                 name=asset_name,
@@ -83,13 +85,14 @@ async def upload_object_asset(
     name: str | None = Form(None),
     ingest: AssetIngestService = Depends(get_asset_ingest_service),
 ) -> AssetUploadResponse:
-    """Upload a GLB and register it as an object asset."""
+    """Upload a GLB or self-contained GLTF and register it as an object asset."""
     asset_name = name or Path(file.filename or "object.glb").stem
     try:
         asset = await _store_upload_and_ingest(
             file=file,
-            suffix=".glb",
-            ingest_fn=lambda temp_path: ingest.ingest_object_glb(
+            allowed_suffixes={".glb", ".gltf"},
+            default_suffix=".glb",
+            ingest_fn=lambda temp_path: ingest.ingest_object_mesh(
                 project_id=project_id,
                 name=asset_name,
                 source_path=temp_path,
@@ -97,7 +100,7 @@ async def upload_object_asset(
         )
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except InvalidGlbError as exc:
+    except (InvalidGlbError, InvalidGltfError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return AssetUploadResponse(asset=asset)
 
@@ -151,15 +154,22 @@ def delete_asset(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-async def _store_upload_and_ingest(file: UploadFile, suffix: str, ingest_fn) -> AssetRecord:
+async def _store_upload_and_ingest(
+    file: UploadFile,
+    allowed_suffixes: set[str],
+    default_suffix: str,
+    ingest_fn,
+) -> AssetRecord:
     """Persist an uploaded file to a temp path before ingest."""
     temp_path: Path | None = None
     upload_suffix = Path(file.filename or "").suffix.lower()
-    if upload_suffix and upload_suffix != suffix:
-        raise HTTPException(status_code=400, detail=f"Expected file extension {suffix}")
+    temp_suffix = upload_suffix or default_suffix
+    if upload_suffix and upload_suffix not in allowed_suffixes:
+        expected = ", ".join(sorted(allowed_suffixes))
+        raise HTTPException(status_code=400, detail=f"Expected file extension in {{{expected}}}")
 
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=temp_suffix) as tmp:
             temp_path = Path(tmp.name)
             while True:
                 chunk = await file.read(1024 * 1024)
