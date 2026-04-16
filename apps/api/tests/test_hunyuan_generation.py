@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
+from types import MethodType
 
 from fastapi import HTTPException
 
@@ -12,7 +13,7 @@ from apps.api.app.api.assets import generate_object_from_image, generate_object_
 from apps.api.app.deps import get_repo
 from apps.api.app.main import create_app
 from apps.api.app.schemas.generation import TextTo3DRequest
-from services.generation import GenerationUnavailableError
+from services.generation import GenerationUnavailableError, Hunyuan3DConfig, Hunyuan3DService
 from services.scene_core.project_manifest import AssetRecord, ProjectManifest
 
 
@@ -122,3 +123,33 @@ def test_generate_from_image_surfaces_runtime_unavailable(tmp_path: Path) -> Non
         assert exc.detail == "cuda missing"
     else:
         raise AssertionError("Expected generate_object_from_image to raise HTTPException")
+
+
+def test_texture_generator_wraps_missing_native_extension(tmp_path: Path) -> None:
+    class _FakePaintPipeline:
+        @classmethod
+        def from_pretrained(cls, model_path: str):
+            raise ModuleNotFoundError("No module named 'custom_rasterizer'", name="custom_rasterizer")
+
+    service = Hunyuan3DService(
+        ingest=None,
+        config=Hunyuan3DConfig(
+            repo_path=tmp_path,
+            shape_model="shape",
+            shape_subfolder="subfolder",
+            texture_model="texture",
+            text2image_model="text2image",
+        ),
+    )
+    service._runtime = MethodType(  # type: ignore[method-assign]
+        lambda self: {"Hunyuan3DPaintPipeline": _FakePaintPipeline},
+        service,
+    )
+
+    try:
+        service._texture_generator()
+    except GenerationUnavailableError as exc:
+        assert "include_texture=false" in str(exc)
+        assert "native rasterizer extensions" in str(exc)
+    else:
+        raise AssertionError("Expected _texture_generator to raise GenerationUnavailableError")

@@ -482,6 +482,30 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
             <section class="panel stack">
               <div class="panel-header">
                 <div>
+                  <h2>Generate</h2>
+                  <p>Create a mesh with Hunyuan from an image or a text prompt, then place it into the active scene.</p>
+                </div>
+                <span class="badge">ai</span>
+              </div>
+              <div class="stack">
+                <div class="cta-row">
+                  <button id="generate-image-button" class="button button-primary" type="button">Generate From Image</button>
+                  <span class="ghost-note">Uploads an image and creates a GLB object asset.</span>
+                </div>
+                <label>
+                  Prompt
+                  <input id="generate-text-prompt" type="text" placeholder="a modern wooden chair" />
+                </label>
+                <div class="cta-row">
+                  <button id="generate-text-button" class="button button-secondary" type="button">Generate From Text</button>
+                  <span class="ghost-note">Text is converted to an image first, then meshed with Hunyuan.</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel stack">
+              <div class="panel-header">
+                <div>
                   <h2>Scene Objects</h2>
                   <p>Edit, hide, select, or delete placed meshes. Changes persist to the project manifest.</p>
                 </div>
@@ -620,6 +644,7 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
 
     <input id="room-file-input" class="file-input" type="file" accept=".ply" />
     <input id="mesh-file-input" class="file-input" type="file" accept=".glb,.gltf" />
+    <input id="generate-image-file-input" class="file-input" type="file" accept="image/*" />
 
     <script>
       const PROJECT_STORAGE_KEY = "deco_active_project_id";
@@ -629,8 +654,12 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
       const meshDropzone = document.getElementById("mesh-dropzone");
       const roomFileInput = document.getElementById("room-file-input");
       const meshFileInput = document.getElementById("mesh-file-input");
+      const generateImageFileInput = document.getElementById("generate-image-file-input");
       const roomBrowseButton = document.getElementById("room-browse-button");
       const meshBrowseButton = document.getElementById("mesh-browse-button");
+      const generateImageButton = document.getElementById("generate-image-button");
+      const generateTextButton = document.getElementById("generate-text-button");
+      const generateTextPrompt = document.getElementById("generate-text-prompt");
       const newSceneButton = document.getElementById("new-scene-button");
       const sceneTitle = document.getElementById("scene-title");
       const sceneSubtitle = document.getElementById("scene-subtitle");
@@ -1059,6 +1088,76 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         }
       }
 
+      async function addGeneratedAssetToScene(asset, preferredName) {
+        const response = await fetchJson(`/projects/${state.projectId}/objects`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: preferredName,
+            asset_id: asset.id,
+            transform: {
+              position: nextMeshPosition(),
+              rotation_euler: [0.0, 0.0, 0.0],
+              scale: [1.0, 1.0, 1.0],
+            },
+            visible: true,
+            metadata: {},
+          }),
+        });
+        const manifest = await fetchProject(state.projectId);
+        applyManifest(manifest);
+        await fetchObjects();
+        return response;
+      }
+
+      async function generateMeshFromImage(file) {
+        if (!state.projectId || !state.roomAssetId) {
+          setStatus("Load a room `.ply` first, then generate objects into the scene.", "error");
+          return;
+        }
+        setStatus(`Generating a mesh from ${file.name} with Hunyuan…`);
+        try {
+          const formData = new FormData();
+          formData.append("file", file);
+          formData.append("name", humanizeName(file.name));
+          const data = await fetchJson(`/projects/${state.projectId}/assets/generate-from-image`, {
+            method: "POST",
+            body: formData,
+          });
+          const object = await addGeneratedAssetToScene(data.asset, data.asset.name || humanizeName(file.name));
+          setStatus(`Generated and placed ${object.name} from ${file.name}.`, "success");
+        } catch (error) {
+          setStatus(`Image generation failed: ${error.message}`, "error");
+        }
+      }
+
+      async function generateMeshFromText() {
+        if (!state.projectId || !state.roomAssetId) {
+          setStatus("Load a room `.ply` first, then generate objects into the scene.", "error");
+          return;
+        }
+        const prompt = generateTextPrompt.value.trim();
+        if (!prompt) {
+          setStatus("Enter a text prompt first.", "error");
+          return;
+        }
+        setStatus(`Generating a mesh from text: ${prompt}`);
+        try {
+          const data = await fetchJson(`/projects/${state.projectId}/assets/generate-from-text`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              prompt,
+              name: humanizeName(prompt),
+            }),
+          });
+          const object = await addGeneratedAssetToScene(data.asset, data.asset.name || humanizeName(prompt));
+          setStatus(`Generated and placed ${object.name} from text.`, "success");
+        } catch (error) {
+          setStatus(`Text generation failed: ${error.message}`, "error");
+        }
+      }
+
       async function selectObjectInViewer(objectId) {
         const object = state.objects.find((item) => item.id === objectId);
         if (!object) {
@@ -1344,6 +1443,23 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
       meshBrowseButton.addEventListener("click", (event) => {
         event.stopPropagation();
         meshFileInput.click();
+      });
+      generateImageButton.addEventListener("click", () => generateImageFileInput.click());
+      generateTextButton.addEventListener("click", async () => {
+        await generateMeshFromText();
+      });
+      generateTextPrompt.addEventListener("keydown", async (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          await generateMeshFromText();
+        }
+      });
+      generateImageFileInput.addEventListener("change", async () => {
+        const file = generateImageFileInput.files?.[0];
+        generateImageFileInput.value = "";
+        if (file) {
+          await generateMeshFromImage(file);
+        }
       });
 
       attachDropzone(roomDropzone, roomFileInput, [".ply"], startRoomScene);

@@ -32,6 +32,9 @@ def test_editor_page_includes_mesh_object_workflow(repo) -> None:
 
     assert 'id="room-dropzone"' in html
     assert 'id="mesh-dropzone"' in html
+    assert 'id="generate-image-button"' in html
+    assert 'id="generate-text-button"' in html
+    assert 'id="generate-text-prompt"' in html
     assert 'id="object-list"' in html
     assert 'id="refresh-objects-button"' in html
     assert 'accept=".glb,.gltf"' in html
