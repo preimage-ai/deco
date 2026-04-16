@@ -36,6 +36,10 @@ class ProjectRepository:
             projects.append(ProjectManifest.model_validate_json(manifest_path.read_text()))
         return projects
 
+    def project_dir(self, project_id: str) -> Path:
+        """Return the on-disk directory for a project."""
+        return self._project_dir(project_id)
+
     def create_project(self, manifest: ProjectManifest) -> ProjectManifest:
         project_dir = self._project_dir(manifest.id)
         project_dir.mkdir(parents=True, exist_ok=False)
@@ -174,4 +178,3 @@ class ProjectRepository:
             if trajectory.id == trajectory_id:
                 return trajectory
         raise EntityNotFoundError(f"Trajectory not found: {trajectory_id}")
-

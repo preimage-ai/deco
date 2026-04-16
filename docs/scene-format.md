@@ -16,6 +16,14 @@ The `scene` section currently stores:
 - `room_asset_id`
 - `objects`
 
+Asset records now store:
+
+- `kind`
+- `role`
+- `source_uri`
+- `preview_uri`
+- `metadata`
+
 Each object stores:
 
 - `id`
