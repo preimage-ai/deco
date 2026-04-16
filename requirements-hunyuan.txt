@@ -1,0 +1,20 @@
+-r requirements.txt
+
+ninja
+pybind11
+diffusers
+einops
+opencv-python
+torch
+transformers
+torchvision
+omegaconf
+tqdm
+trimesh
+pymeshlab
+pygltflib
+xatlas
+accelerate
+gradio
+rembg
+onnxruntime

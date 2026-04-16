@@ -7,14 +7,17 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import FileResponse
 
-from apps.api.app.deps import get_render_service, get_repo, get_viewer_service
+from apps.api.app.deps import get_enhancement_service, get_render_service, get_repo, get_viewer_service
 from apps.api.app.schemas.trajectory import (
     CaptureKeyframeRequest,
+    EnhanceRenderRequest,
+    EnhancedVideoResponse,
     RenderTrajectoryRequest,
     RenderTrajectoryResponse,
     TrajectoryCreateRequest,
     TrajectoryUpdateRequest,
 )
+from services.enhancement import EnhancementFailedError, EnhancementUnavailableError
 from services.scene_core.project_manifest import TrajectoryRecord
 from services.trajectory.interpolation import keyframe_from_camera_state
 from services.storage.local_fs import EntityNotFoundError, ProjectNotFoundError, ProjectRepository
@@ -195,6 +198,49 @@ def render_trajectory_video(
     )
 
 render_router = APIRouter(prefix="/projects/{project_id}/renders", tags=["renders"])
+
+
+@render_router.post("/{filename}/enhance", response_model=EnhancedVideoResponse)
+def enhance_rendered_video(
+    project_id: str,
+    filename: str,
+    payload: EnhanceRenderRequest,
+    repo: ProjectRepository = Depends(get_repo),
+    enhancement_service=Depends(get_enhancement_service),
+) -> EnhancedVideoResponse:
+    """Send an existing rendered MP4 through Runway Aleph enhancement."""
+    render_path = repo.project_dir(project_id) / "renders" / Path(filename).name
+    if not render_path.exists():
+        raise HTTPException(status_code=404, detail=f"Render not found: {filename}")
+
+    try:
+        enhanced = enhancement_service.enhance_video(
+            project_id=project_id,
+            source_relative_path=str(render_path.relative_to(repo.root)),
+            output_stem=render_path.stem,
+            width=payload.width,
+            height=payload.height,
+            wait_timeout_seconds=payload.ai_wait_timeout_seconds,
+        )
+    except EnhancementUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except EnhancementFailedError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return EnhancedVideoResponse(
+        provider=enhanced.provider,
+        model=enhanced.model,
+        prompt=enhanced.prompt,
+        task_id=enhanced.task_id,
+        status=enhanced.status,
+        filename=enhanced.filename,
+        relative_path=enhanced.relative_path,
+        artifact_url=(
+            f"/projects/{project_id}/renders/{enhanced.filename}"
+            if enhanced.filename
+            else None
+        ),
+    )
 
 
 @render_router.get("/{filename}")

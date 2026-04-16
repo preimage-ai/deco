@@ -241,6 +241,19 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         text-transform: uppercase;
         color: var(--muted);
       }
+      .toggle-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        text-transform: none;
+        letter-spacing: 0;
+        font-size: 14px;
+        color: var(--ink);
+      }
+      .toggle-row input {
+        width: auto;
+        margin: 0;
+      }
       input,
       select {
         width: 100%;
@@ -546,7 +559,10 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
                   <input id="render-height" name="height" type="number" min="64" step="1" value="720" />
                 </label>
               </div>
-              <button id="render-button" class="button button-primary" type="submit">Render MP4</button>
+              <div class="cta-row">
+                <button id="render-button" class="button button-primary" type="submit">Render MP4</button>
+                <button id="enhance-button" class="button button-secondary" type="button" disabled>Enhance Last Render</button>
+              </div>
             </form>
 
             <div id="status-card" class="status-card" data-tone="info">
@@ -585,6 +601,18 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
               </div>
               <video id="render-video" controls></video>
             </section>
+
+            <section class="render-card">
+              <div class="render-header">
+                <div>
+                  <h2>AI Enhanced</h2>
+                  <p class="viewer-note">Runway-enhanced playback appears here after the post-process step finishes.</p>
+                </div>
+                <span class="badge badge-live">aleph</span>
+              </div>
+              <video id="enhanced-render-video" controls></video>
+              <p id="enhanced-render-meta" class="viewer-note">No enhanced render yet.</p>
+            </section>
           </div>
         </section>
       </section>
@@ -622,10 +650,13 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
       const renderFpsInput = document.getElementById("render-fps");
       const renderWidthInput = document.getElementById("render-width");
       const renderHeightInput = document.getElementById("render-height");
+      const enhanceButton = document.getElementById("enhance-button");
       const statusCard = document.getElementById("status-card");
       const statusEl = document.getElementById("status");
       const viewerFrame = document.getElementById("viewer-frame");
       const renderVideo = document.getElementById("render-video");
+      const enhancedRenderVideo = document.getElementById("enhanced-render-video");
+      const enhancedRenderMeta = document.getElementById("enhanced-render-meta");
 
       const state = {
         projectId: null,
@@ -635,11 +666,23 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         objects: [],
         selectedObjectId: null,
         openObjectId: null,
+        lastRenderFilename: null,
       };
 
       function setStatus(message, tone = "info") {
         statusCard.dataset.tone = tone;
         statusEl.textContent = message;
+      }
+
+      function resetEnhancedRenderPanel() {
+        enhancedRenderVideo.removeAttribute("src");
+        enhancedRenderVideo.load();
+        enhancedRenderMeta.textContent = "No enhanced render yet.";
+      }
+
+      function updateRenderActions() {
+        renderButton.disabled = state.trajectories.length === 0;
+        enhanceButton.disabled = !state.projectId || !state.lastRenderFilename;
       }
 
       function showLanding() {
@@ -714,7 +757,7 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
           }
         }
         captureKeyframeButton.disabled = state.trajectories.length === 0;
-        renderButton.disabled = state.trajectories.length === 0;
+        updateRenderActions();
         updateSceneChrome();
         resetTrajectoryDraft();
       }
@@ -893,10 +936,12 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         state.objects = [];
         state.selectedObjectId = null;
         state.openObjectId = null;
+        state.lastRenderFilename = null;
         localStorage.removeItem(PROJECT_STORAGE_KEY);
         viewerFrame.src = "about:blank";
         renderVideo.removeAttribute("src");
         renderVideo.load();
+        resetEnhancedRenderPanel();
         populateTrajectorySelects();
         setViewerBadge("waiting");
         stageHint.hidden = false;
@@ -1239,9 +1284,45 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
           );
           renderVideo.src = data.artifact_url;
           renderVideo.load();
+          state.lastRenderFilename = data.filename;
+          updateRenderActions();
+          resetEnhancedRenderPanel();
           setStatus(`Rendered ${data.filename} at ${data.fps} fps with ${data.frame_count} frames.`, "success");
         } catch (error) {
           setStatus(`Render failed: ${error.message}`, "error");
+        }
+      });
+
+      enhanceButton.addEventListener("click", async () => {
+        if (!state.projectId || !state.lastRenderFilename) {
+          setStatus("Render an MP4 first, then enhance it.", "error");
+          return;
+        }
+        setStatus("Submitting the last render to Runway Aleph…");
+        try {
+          const data = await fetchJson(
+            `/projects/${state.projectId}/renders/${state.lastRenderFilename}/enhance`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                width: Number(renderWidthInput.value || 1280),
+                height: Number(renderHeightInput.value || 720),
+              }),
+            },
+          );
+          if (data.artifact_url) {
+            enhancedRenderVideo.src = data.artifact_url;
+            enhancedRenderVideo.load();
+            enhancedRenderMeta.textContent = `Enhanced with ${data.provider} ${data.model}. Task ${data.task_id}.`;
+            setStatus(`Enhanced ${state.lastRenderFilename} and downloaded ${data.filename}.`, "success");
+          } else {
+            resetEnhancedRenderPanel();
+            enhancedRenderMeta.textContent = `Enhancement task ${data.task_id} is ${data.status}.`;
+            setStatus(`Enhancement task ${data.task_id} is ${data.status}.`, "success");
+          }
+        } catch (error) {
+          setStatus(`AI enhancement failed: ${error.message}`, "error");
         }
       });
 

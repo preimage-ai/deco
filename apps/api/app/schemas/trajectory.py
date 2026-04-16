@@ -45,6 +45,27 @@ class RenderTrajectoryRequest(BaseModel):
     fps: int = 24
 
 
+class EnhanceRenderRequest(BaseModel):
+    """Payload for AI-enhancing an existing rendered video."""
+
+    width: int = 1280
+    height: int = 720
+    ai_wait_timeout_seconds: int = 900
+
+
+class EnhancedVideoResponse(BaseModel):
+    """Metadata for an AI-enhanced render artifact or pending task."""
+
+    provider: str
+    model: str
+    prompt: str
+    task_id: str
+    status: str
+    filename: str | None = None
+    relative_path: str | None = None
+    artifact_url: str | None = None
+
+
 class RenderTrajectoryResponse(BaseModel):
     """Response payload for a rendered trajectory artifact."""
 

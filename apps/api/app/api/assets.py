@@ -7,12 +7,19 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
 
-from apps.api.app.deps import get_asset_ingest_service, get_repo, get_viewer_service
+from apps.api.app.deps import (
+    get_asset_ingest_service,
+    get_generation_service,
+    get_repo,
+    get_viewer_service,
+)
 from apps.api.app.schemas.asset import AssetCreateRequest, AssetUpdateRequest
+from apps.api.app.schemas.generation import TextTo3DRequest
 from apps.api.app.schemas.upload import AssetUploadResponse
 from services.assets.glb_ingest import InvalidGlbError
 from services.assets.gltf_ingest import InvalidGltfError
 from services.assets.file_ingest import AssetIngestService
+from services.generation import GenerationUnavailableError, Hunyuan3DService
 from services.gsplat.ply_parser import InvalidPlyError
 from services.scene_core.project_manifest import AssetRecord
 from services.storage.local_fs import EntityNotFoundError, ProjectNotFoundError, ProjectRepository
@@ -102,6 +109,90 @@ async def upload_object_asset(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (InvalidGlbError, InvalidGltfError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return AssetUploadResponse(asset=asset)
+
+
+@router.post(
+    "/generate-from-image",
+    response_model=AssetUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def generate_object_from_image(
+    project_id: str,
+    file: UploadFile = File(...),
+    name: str | None = Form(None),
+    include_texture: bool = Form(True),
+    remove_background: bool = Form(True),
+    seed: int = Form(0),
+    num_inference_steps: int = Form(30),
+    guidance_scale: float = Form(7.5),
+    octree_resolution: int = Form(256),
+    num_chunks: int = Form(20000),
+    generation: Hunyuan3DService = Depends(get_generation_service),
+) -> AssetUploadResponse:
+    """Generate a GLB object from an input image with Hunyuan3D."""
+    asset_name = name or Path(file.filename or "generated-object.png").stem
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(file.filename or ".png").suffix or ".png") as tmp:
+            temp_path = Path(tmp.name)
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                tmp.write(chunk)
+        asset = generation.generate_from_image(
+            project_id=project_id,
+            name=asset_name,
+            image_path=temp_path,
+            include_texture=include_texture,
+            remove_background=remove_background,
+            seed=seed,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+            octree_resolution=octree_resolution,
+            num_chunks=num_chunks,
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except GenerationUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    finally:
+        await file.close()
+        if temp_path and temp_path.exists():
+            temp_path.unlink(missing_ok=True)
+    return AssetUploadResponse(asset=asset)
+
+
+@router.post(
+    "/generate-from-text",
+    response_model=AssetUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def generate_object_from_text(
+    project_id: str,
+    payload: TextTo3DRequest,
+    generation: Hunyuan3DService = Depends(get_generation_service),
+) -> AssetUploadResponse:
+    """Generate a GLB object from a text prompt with Hunyuan3D."""
+    asset_name = payload.name or payload.prompt[:48].strip() or "generated-object"
+    try:
+        asset = generation.generate_from_text(
+            project_id=project_id,
+            name=asset_name,
+            prompt=payload.prompt,
+            include_texture=payload.include_texture,
+            remove_background=payload.remove_background,
+            seed=payload.seed,
+            num_inference_steps=payload.num_inference_steps,
+            guidance_scale=payload.guidance_scale,
+            octree_resolution=payload.octree_resolution,
+            num_chunks=payload.num_chunks,
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except GenerationUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return AssetUploadResponse(asset=asset)
 
 

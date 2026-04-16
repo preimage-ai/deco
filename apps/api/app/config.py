@@ -7,6 +7,31 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
+def _dotenv_values(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    if not path.exists():
+        return values
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip("'").strip('"')
+        if key:
+            values[key] = value
+    return values
+
+
+def _setting(name: str, default: str | None = None) -> str | None:
+    dotenv = _dotenv_values(_repo_root() / ".env")
+    return os.getenv(name, dotenv.get(name, default))
+
+
 @dataclass(frozen=True)
 class Settings:
     """Runtime settings for the API app."""
@@ -16,18 +41,70 @@ class Settings:
     viewer_host: str
     viewer_port: int
     viewer_public_host: str
+    hunyuan_repo_path: Path
+    hunyuan_shape_model: str
+    hunyuan_shape_subfolder: str
+    hunyuan_texture_model: str
+    hunyuan_text2image_model: str
+    hunyuan_device: str
+    runway_api_key: str | None
+    runway_api_version: str
+    runway_video_model: str
+    runway_video_prompt: str
+    runway_poll_interval_seconds: float
 
 
 def get_settings() -> Settings:
     """Return application settings from environment variables."""
-    projects_root = Path(os.getenv("DECO_PROJECTS_ROOT", "projects")).resolve()
-    viewer_host = os.getenv("DECO_VIEWER_HOST", "0.0.0.0")
-    viewer_port = int(os.getenv("DECO_VIEWER_PORT", "8080"))
-    viewer_public_host = os.getenv("DECO_VIEWER_PUBLIC_HOST", "localhost")
+    projects_root = Path(_setting("DECO_PROJECTS_ROOT", "projects") or "projects").resolve()
+    viewer_host = _setting("DECO_VIEWER_HOST", "0.0.0.0") or "0.0.0.0"
+    viewer_port = int(_setting("DECO_VIEWER_PORT", "8080") or "8080")
+    viewer_public_host = _setting("DECO_VIEWER_PUBLIC_HOST", "localhost") or "localhost"
+    hunyuan_repo_path = Path(
+        _setting("DECO_HUNYUAN_REPO_PATH", "external/Hunyuan3D-2") or "external/Hunyuan3D-2"
+    ).resolve()
+    hunyuan_shape_model = _setting("DECO_HUNYUAN_SHAPE_MODEL", "tencent/Hunyuan3D-2") or "tencent/Hunyuan3D-2"
+    hunyuan_shape_subfolder = _setting(
+        "DECO_HUNYUAN_SHAPE_SUBFOLDER",
+        "hunyuan3d-dit-v2-0",
+    ) or "hunyuan3d-dit-v2-0"
+    hunyuan_texture_model = _setting("DECO_HUNYUAN_TEXTURE_MODEL", "tencent/Hunyuan3D-2") or "tencent/Hunyuan3D-2"
+    hunyuan_text2image_model = _setting(
+        "DECO_HUNYUAN_TEXT2IMAGE_MODEL",
+        "Tencent-Hunyuan/HunyuanDiT-v1.1-Diffusers-Distilled",
+    ) or "Tencent-Hunyuan/HunyuanDiT-v1.1-Diffusers-Distilled"
+    hunyuan_device = _setting("DECO_HUNYUAN_DEVICE", "auto") or "auto"
+    runway_api_key = _setting("DECO_RUNWAY_API_KEY") or _setting("RUNWAYML_API_SECRET")
+    runway_api_version = _setting("DECO_RUNWAY_API_VERSION", "2024-11-06") or "2024-11-06"
+    runway_video_model = _setting("DECO_RUNWAY_VIDEO_MODEL", "gen4_aleph") or "gen4_aleph"
+    runway_video_prompt = _setting(
+        "DECO_RUNWAY_VIDEO_PROMPT",
+        "this video has a gaussian splat render with some 3d meshes added onto it. "
+        "turn this video into a photorealistic video with reduced floaters, beautify it "
+        "and make the meshes look real",
+    ) or (
+        "this video has a gaussian splat render with some 3d meshes added onto it. "
+        "turn this video into a photorealistic video with reduced floaters, beautify it "
+        "and make the meshes look real"
+    )
+    runway_poll_interval_seconds = float(
+        _setting("DECO_RUNWAY_POLL_INTERVAL_SECONDS", "5") or "5"
+    )
     return Settings(
         app_name="deco API",
         projects_root=projects_root,
         viewer_host=viewer_host,
         viewer_port=viewer_port,
         viewer_public_host=viewer_public_host,
+        hunyuan_repo_path=hunyuan_repo_path,
+        hunyuan_shape_model=hunyuan_shape_model,
+        hunyuan_shape_subfolder=hunyuan_shape_subfolder,
+        hunyuan_texture_model=hunyuan_texture_model,
+        hunyuan_text2image_model=hunyuan_text2image_model,
+        hunyuan_device=hunyuan_device,
+        runway_api_key=runway_api_key,
+        runway_api_version=runway_api_version,
+        runway_video_model=runway_video_model,
+        runway_video_prompt=runway_video_prompt,
+        runway_poll_interval_seconds=runway_poll_interval_seconds,
     )

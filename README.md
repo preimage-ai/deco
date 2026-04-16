@@ -42,6 +42,67 @@ python -m pip install -r requirements.txt
 
 If you are using the same environment as development here, launch `uvicorn` through `python -m uvicorn` so it uses the correct interpreter and installed dependencies.
 
+## Optional Hunyuan3D Integration
+
+This repository now includes a Hunyuan3D-backed generation path for image-to-GLB and text-to-GLB asset creation.
+
+Install the optional runtime like this:
+
+```bash
+python -m pip install -r requirements-hunyuan.txt
+python -m pip install -e external/Hunyuan3D-2
+```
+
+Relevant environment variables:
+
+- `DECO_HUNYUAN_REPO_PATH`
+  local checkout path, default `external/Hunyuan3D-2`
+- `DECO_HUNYUAN_SHAPE_MODEL`
+  shape model id, default `tencent/Hunyuan3D-2`
+- `DECO_HUNYUAN_SHAPE_SUBFOLDER`
+  shape model subfolder, default `hunyuan3d-dit-v2-0`
+- `DECO_HUNYUAN_TEXTURE_MODEL`
+  texture model id, default `tencent/Hunyuan3D-2`
+- `DECO_HUNYUAN_TEXT2IMAGE_MODEL`
+  text-to-image model id, default `Tencent-Hunyuan/HunyuanDiT-v1.1-Diffusers-Distilled`
+- `DECO_HUNYUAN_DEVICE`
+  device override, default `auto`
+
+Generation endpoints:
+
+- `POST /projects/{project_id}/assets/generate-from-image`
+  multipart form upload plus Hunyuan generation params
+- `POST /projects/{project_id}/assets/generate-from-text`
+  JSON prompt payload plus Hunyuan generation params
+
+This implementation currently guards against CPU-only execution by returning `503` when CUDA is unavailable, because the upstream models are configured for GPU workloads and are not practical on this machine.
+
+## Runway Enhancement
+
+Rendered trajectory videos can now be post-processed with Runway Aleph video-to-video.
+
+Configuration is read from environment variables or the repository-root `.env` file:
+
+- `DECO_RUNWAY_API_KEY`
+  Runway API key
+- `DECO_RUNWAY_API_VERSION`
+  default `2024-11-06`
+- `DECO_RUNWAY_VIDEO_MODEL`
+  default `gen4_aleph`
+- `DECO_RUNWAY_VIDEO_PROMPT`
+  prompt used for post-processing
+- `DECO_RUNWAY_POLL_INTERVAL_SECONDS`
+  task polling interval, default `5`
+
+Render request fields:
+
+- `enhance_with_ai`
+  when `true`, the rendered MP4 is uploaded to Runway after local render
+- `ai_wait_timeout_seconds`
+  how long the API waits for the Runway task before returning a pending status
+
+When enhancement succeeds, the response includes an `enhancement` object with task metadata and an artifact URL for the downloaded enhanced MP4 under the project `renders/` directory.
+
 ## Run The App
 
 Start the API server from the repository root:
