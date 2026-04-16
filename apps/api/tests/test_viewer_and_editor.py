@@ -7,11 +7,14 @@ from math import pi, sqrt
 from pathlib import Path
 from types import SimpleNamespace
 
-from apps.api.app.deps import get_repo, get_viewer_service
+from fastapi.testclient import TestClient
+
+from apps.api.app.deps import get_generation_service, get_repo, get_viewer_service
 from apps.api.app.api.viewer import editor_page
 from apps.api.app.main import create_app
 import apps.api.app.orchestration.viewer_service as viewer_service_module
-from apps.api.app.orchestration.viewer_service import ViewerService
+from apps.api.app.orchestration.viewer_service import ViewerService, ViewerSession
+from services.generation.depth_anything_generation import GeneratedGsplatProject
 from services.scene_core.project_manifest import AssetRecord, ObjectInstance, ProjectManifest, Transform
 
 
@@ -20,6 +23,7 @@ def test_editor_and_viewer_routes_registered(tmp_path: Path) -> None:
     os.environ["DECO_VIEWER_PORT"] = "8095"
     get_repo.cache_clear()
     get_viewer_service.cache_clear()
+    get_generation_service.cache_clear()
 
     app = create_app()
     routes = {route.path for route in app.routes}
@@ -30,8 +34,13 @@ def test_editor_and_viewer_routes_registered(tmp_path: Path) -> None:
 def test_editor_page_includes_mesh_object_workflow(repo) -> None:
     html = editor_page(repo)
 
+    assert 'id="workflow-create-button"' in html
+    assert 'id="workflow-edit-button"' in html
     assert 'id="room-dropzone"' in html
+    assert 'id="generation-dropzone"' in html
     assert 'id="mesh-dropzone"' in html
+    assert 'id="download-room-link"' in html
+    assert 'accept=".jpg,.jpeg,.png,.webp,.bmp,.tif,.tiff"' in html
     assert 'accept=".glb,.gltf"' in html
     assert 'id="new-scene-button"' in html
     assert 'id="project-form"' not in html
@@ -258,6 +267,98 @@ def test_viewer_service_loads_room_asset_and_visible_mesh_objects(repo, monkeypa
     repo.delete_object(project.id, lamp_obj.id)
     loaded_after_delete = viewer.refresh_scene_objects(project.id)
     assert lamp_obj.id not in loaded_after_delete
+
+
+def test_asset_download_route_serves_asset_file(repo) -> None:
+    project = repo.create_project(ProjectManifest(name="Download Demo"))
+    project_dir = repo.project_dir(project.id)
+    room_path = project_dir / "assets" / "rooms" / "room.ply"
+    room_path.parent.mkdir(parents=True, exist_ok=True)
+    room_path.write_bytes(b"ply\nformat ascii 1.0\n")
+    room = repo.add_asset(
+        project.id,
+        AssetRecord(
+            name="Room",
+            kind="gsplat_ply",
+            role="room",
+            source_uri=str(room_path.relative_to(repo.root)),
+        ),
+    ).assets[0]
+
+    app = create_app()
+    app.dependency_overrides[get_repo] = lambda: repo
+    client = TestClient(app)
+
+    response = client.get(f"/projects/{project.id}/assets/{room.id}/download")
+
+    assert response.status_code == 200
+    assert response.content == b"ply\nformat ascii 1.0\n"
+    assert "attachment" in response.headers["content-disposition"]
+    assert "room.ply" in response.headers["content-disposition"]
+
+
+def test_generation_route_returns_generated_project_and_viewer_urls(tmp_path: Path) -> None:
+    os.environ["DECO_PROJECTS_ROOT"] = str(tmp_path / "projects")
+    get_repo.cache_clear()
+    get_viewer_service.cache_clear()
+    get_generation_service.cache_clear()
+
+    repo = get_repo()
+    generated_asset = AssetRecord(
+        id="asset_generated",
+        name="Generated GSplat",
+        kind="gsplat_ply",
+        role="room",
+        source_uri="proj_generated/assets/rooms/generated_room.ply",
+    )
+    seen_suffixes: list[str] = []
+
+    class FakeGenerationService:
+        def create_project_from_images(self, image_paths) -> GeneratedGsplatProject:
+            seen_suffixes.extend(path.suffix for path in image_paths)
+            return GeneratedGsplatProject(
+                project_id="proj_generated",
+                project_name="Generated Scene Apr 16 12:30",
+                asset=generated_asset,
+                input_image_count=len(image_paths),
+            )
+
+    class FakeViewerService:
+        def load_room(self, project_id: str, asset_id: str | None = None) -> ViewerSession:
+            assert project_id == "proj_generated"
+            assert asset_id == "asset_generated"
+            return ViewerSession(
+                viewer_url="http://localhost:8080",
+                project_id=project_id,
+                asset_id=asset_id or generated_asset.id,
+                source_uri=generated_asset.source_uri or "",
+                loaded_object_ids=[],
+            )
+
+    app = create_app()
+    app.dependency_overrides[get_repo] = lambda: repo
+    app.dependency_overrides[get_generation_service] = lambda: FakeGenerationService()
+    app.dependency_overrides[get_viewer_service] = lambda: FakeViewerService()
+    client = TestClient(app)
+
+    response = client.post(
+        "/generation/create-gsplat",
+        files=[
+            ("files", ("view_a.jpg", b"jpg-bytes", "image/jpeg")),
+            ("files", ("view_b.png", b"png-bytes", "image/png")),
+        ],
+    )
+
+    assert response.status_code == 201
+    assert seen_suffixes == [".jpg", ".png"]
+    payload = response.json()
+    assert payload["project_id"] == "proj_generated"
+    assert payload["project_name"] == "Generated Scene Apr 16 12:30"
+    assert payload["asset"]["id"] == "asset_generated"
+    assert payload["viewer_url"] == "http://localhost:8080"
+    assert payload["download_url"] == "/projects/proj_generated/assets/asset_generated/download"
+    assert payload["input_image_count"] == 2
+    assert payload["loaded_object_ids"] == []
     assert lamp_obj.id not in viewer._object_handles
 
     server.stop()

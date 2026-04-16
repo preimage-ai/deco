@@ -1,0 +1,8 @@
+# Optional image-to-gsplat workflow dependencies.
+# Install `requirements.txt` first, then install this file if you want the
+# Depth Anything 3 powered gsplat creation workflow in `/editor`.
+# For this repo's current DA3 path, we only need gaussian estimation plus PLY
+# export. We render the saved `.ply` in our own viser viewer, so the upstream
+# `nerfstudio-project/gsplat` rasterizer is not required here.
+depth-anything-3 @ git+https://github.com/ByteDance-Seed/Depth-Anything-3.git
+# gsplat @ git+https://github.com/nerfstudio-project/gsplat.git@0b4dddf04cb687367602c01196913cde6a743d70

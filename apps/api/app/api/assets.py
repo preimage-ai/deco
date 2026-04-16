@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
+from fastapi.responses import FileResponse
 
 from apps.api.app.deps import get_asset_ingest_service, get_repo, get_viewer_service
 from apps.api.app.schemas.asset import AssetCreateRequest, AssetUpdateRequest
@@ -121,6 +122,33 @@ def get_asset(
         raise HTTPException(status_code=404, detail=f"Asset not found: {asset_id}") from exc
 
 
+@router.get("/{asset_id}/download")
+def download_asset(
+    project_id: str,
+    asset_id: str,
+    repo: ProjectRepository = Depends(get_repo),
+) -> FileResponse:
+    """Download an asset's source file from the local project store."""
+    asset = _find_asset(repo=repo, project_id=project_id, asset_id=asset_id)
+    if not asset.source_uri:
+        raise HTTPException(status_code=404, detail=f"Asset has no downloadable source: {asset_id}")
+
+    source_path = (repo.root / asset.source_uri).resolve()
+    try:
+        source_path.relative_to(repo.root.resolve())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Asset source path points outside the project store.") from exc
+
+    if not source_path.exists():
+        raise HTTPException(status_code=404, detail=f"Asset file is missing on disk: {source_path}")
+
+    return FileResponse(
+        source_path,
+        media_type="application/octet-stream",
+        filename=source_path.name,
+    )
+
+
 @router.patch("/{asset_id}", response_model=AssetRecord)
 def update_asset(
     project_id: str,
@@ -154,6 +182,17 @@ def delete_asset(
     except (ProjectNotFoundError, EntityNotFoundError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _find_asset(repo: ProjectRepository, project_id: str, asset_id: str) -> AssetRecord:
+    """Look up an asset within a project manifest."""
+    try:
+        manifest = repo.get_project(project_id)
+        return next(item for item in manifest.assets if item.id == asset_id)
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except StopIteration as exc:
+        raise HTTPException(status_code=404, detail=f"Asset not found: {asset_id}") from exc
 
 
 async def _store_upload_and_ingest(
