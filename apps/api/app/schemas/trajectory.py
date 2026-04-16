@@ -51,6 +51,7 @@ class EnhanceRenderRequest(BaseModel):
     width: int = 1280
     height: int = 720
     ai_wait_timeout_seconds: int = 900
+    prompt: str | None = None
 
 
 class EnhancedVideoResponse(BaseModel):

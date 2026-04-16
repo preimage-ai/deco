@@ -73,8 +73,10 @@ class RunwayAlephEnhancementService:
         width: int,
         height: int,
         wait_timeout_seconds: int,
+        prompt: str | None = None,
     ) -> EnhancedVideoArtifact:
         """Upload a local render, wait for enhancement, and download the result."""
+        prompt_text = (prompt or "").strip() or self.config.prompt_text
         try:
             client = self._client()
             source_path = self.repo.root / source_relative_path
@@ -88,7 +90,7 @@ class RunwayAlephEnhancementService:
 
             task = client.video_to_video.create(
                 model=self.config.model,
-                prompt_text=self.config.prompt_text,
+                prompt_text=prompt_text,
                 video_uri=upload.uri,
                 ratio=self._closest_ratio(width, height),
             )
@@ -106,7 +108,7 @@ class RunwayAlephEnhancementService:
                     return EnhancedVideoArtifact(
                         provider="runwayml",
                         model=self.config.model,
-                        prompt=self.config.prompt_text,
+                        prompt=prompt_text,
                         task_id=task_id,
                         status=task_state.status,
                         filename=artifact_path.name,
@@ -121,7 +123,7 @@ class RunwayAlephEnhancementService:
             return EnhancedVideoArtifact(
                 provider="runwayml",
                 model=self.config.model,
-                prompt=self.config.prompt_text,
+                prompt=prompt_text,
                 task_id=task_id,
                 status=last_status,
             )

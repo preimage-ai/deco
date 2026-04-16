@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from html import escape
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 
+from apps.api.app.config import get_settings
 from apps.api.app.deps import get_repo, get_viewer_service
 from apps.api.app.orchestration.viewer_service import MissingViewerDependencyError
 from apps.api.app.schemas.viewer import (
@@ -23,6 +26,7 @@ router = APIRouter(tags=["viewer"])
 @router.get("/editor", response_class=HTMLResponse)
 def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
     """Serve a drag-and-drop-first editor shell for room and mesh uploads."""
+    runway_prompt = escape(get_settings().runway_video_prompt)
     return """<!doctype html>
 <html lang="en">
   <head>
@@ -59,10 +63,10 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
           linear-gradient(180deg, var(--bg-glow), var(--bg));
         color: var(--ink);
       }
-      button, input, select, video {
+      button, input, select, textarea, video {
         font: inherit;
       }
-      button, input, select {
+      button, input, select, textarea {
         border: 1px solid var(--line);
         outline: none;
       }
@@ -255,12 +259,17 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         margin: 0;
       }
       input,
-      select {
+      select,
+      textarea {
         width: 100%;
         padding: 14px 16px;
         border-radius: 14px;
         background: rgba(4, 10, 20, 0.5);
         color: var(--ink);
+      }
+      textarea {
+        min-height: 136px;
+        resize: vertical;
       }
       .inline-grid {
         display: grid;
@@ -559,6 +568,10 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
                   <input id="render-height" name="height" type="number" min="64" step="1" value="720" />
                 </label>
               </div>
+              <label>
+                Runway Enhancement Prompt
+                <textarea id="enhance-prompt" name="prompt" spellcheck="false">__RUNWAY_PROMPT__</textarea>
+              </label>
               <div class="cta-row">
                 <button id="render-button" class="button button-primary" type="submit">Render MP4</button>
                 <button id="enhance-button" class="button button-secondary" type="button" disabled>Enhance Last Render</button>
@@ -650,6 +663,7 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
       const renderFpsInput = document.getElementById("render-fps");
       const renderWidthInput = document.getElementById("render-width");
       const renderHeightInput = document.getElementById("render-height");
+      const enhancePromptInput = document.getElementById("enhance-prompt");
       const enhanceButton = document.getElementById("enhance-button");
       const statusCard = document.getElementById("status-card");
       const statusEl = document.getElementById("status");
@@ -1308,17 +1322,18 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
               body: JSON.stringify({
                 width: Number(renderWidthInput.value || 1280),
                 height: Number(renderHeightInput.value || 720),
+                prompt: enhancePromptInput.value,
               }),
             },
           );
           if (data.artifact_url) {
             enhancedRenderVideo.src = data.artifact_url;
             enhancedRenderVideo.load();
-            enhancedRenderMeta.textContent = `Enhanced with ${data.provider} ${data.model}. Task ${data.task_id}.`;
+            enhancedRenderMeta.textContent = `Enhanced with ${data.provider} ${data.model}. Task ${data.task_id}. Prompt: ${data.prompt}`;
             setStatus(`Enhanced ${state.lastRenderFilename} and downloaded ${data.filename}.`, "success");
           } else {
             resetEnhancedRenderPanel();
-            enhancedRenderMeta.textContent = `Enhancement task ${data.task_id} is ${data.status}.`;
+            enhancedRenderMeta.textContent = `Enhancement task ${data.task_id} is ${data.status}. Prompt: ${data.prompt}`;
             setStatus(`Enhancement task ${data.task_id} is ${data.status}.`, "success");
           }
         } catch (error) {
@@ -1355,7 +1370,7 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
       restoreSession();
     </script>
   </body>
-</html>"""
+</html>""".replace("__RUNWAY_PROMPT__", runway_prompt)
 
 
 @router.post("/projects/{project_id}/viewer/load-room", response_model=ViewerLaunchResponse)

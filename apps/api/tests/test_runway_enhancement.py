@@ -43,10 +43,11 @@ class _FakeRenderService:
 
 class _FakeEnhancementService:
     def enhance_video(self, **kwargs) -> EnhancedVideoArtifact:
+        prompt = kwargs.get("prompt") or "enhance"
         return EnhancedVideoArtifact(
             provider="runwayml",
             model="gen4_aleph",
-            prompt="enhance",
+            prompt=prompt,
             task_id="task_123",
             status="SUCCEEDED",
             filename="orbit_enhanced.mp4",
@@ -91,13 +92,14 @@ def test_enhance_rendered_video_returns_artifact(tmp_path: Path) -> None:
     response = enhance_rendered_video(
         project_id=project.id,
         filename="orbit.mp4",
-        payload=EnhanceRenderRequest(),
+        payload=EnhanceRenderRequest(prompt="make this more realistic"),
         repo=repo,
         enhancement_service=_FakeEnhancementService(),
     )
 
     assert response.provider == "runwayml"
     assert response.task_id == "task_123"
+    assert response.prompt == "make this more realistic"
     assert response.artifact_url == f"/projects/{project.id}/renders/orbit_enhanced.mp4"
 
 
