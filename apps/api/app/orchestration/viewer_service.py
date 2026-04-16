@@ -309,6 +309,42 @@ class ViewerService:
         """Persist the current object pose and hide its gizmo."""
         self._persist_object_transform(project_id, object_id)
 
+    def persist_object_state(
+        self,
+        project_id: str,
+        object_id: str,
+        *,
+        name: str | None = None,
+        scale: list[float] | None = None,
+    ) -> None:
+        """Persist the current viewer pose and optional metadata edits for an object."""
+        handles = self._object_handles.get(object_id)
+        if handles is None:
+            raise EntityNotFoundError(f"Object not found: {object_id}")
+
+        self._sync_mesh_to_transform(object_id)
+        manifest = self.repo.get_project(project_id)
+        obj = next((item for item in manifest.scene.objects if item.id == object_id), None)
+        if obj is None:
+            raise EntityNotFoundError(f"Object not found: {object_id}")
+
+        final_scale = _vector3(scale if scale is not None else list(handles.scale), fallback=1.0)
+        handles.scale = final_scale
+        handles.mesh.scale = final_scale
+
+        patch: dict[str, Any] = {
+            "transform": {
+                "position": list(_vector3(handles.mesh.position, fallback=0.0)),
+                "rotation_euler": list(_wxyz_to_euler_xyz(handles.mesh.wxyz)),
+                "scale": list(final_scale),
+            }
+        }
+        if name is not None:
+            patch["name"] = name
+
+        self.repo.update_object(project_id, object_id, patch)
+        self._clear_selection()
+
 
 def _import_viser():
     try:

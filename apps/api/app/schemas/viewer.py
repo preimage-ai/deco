@@ -25,6 +25,8 @@ class ViewerObjectSelectionRequest(BaseModel):
     """Request payload for showing or hiding an object's transform gizmo."""
 
     object_id: str | None = None
+    name: str | None = None
+    scale: list[float] | None = None
 
 
 class ViewerObjectSelectionResponse(BaseModel):

@@ -162,6 +162,7 @@ def render_trajectory_video(
     try:
         manifest = repo.get_project(project_id)
         trajectory = next(item for item in manifest.trajectories if item.id == trajectory_id)
+        viewer_service.set_selected_object(project_id, None)
         client = viewer_service.get_active_client()
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

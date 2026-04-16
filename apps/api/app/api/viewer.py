@@ -1056,31 +1056,14 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
           return;
         }
         try {
-          const object = state.objects.find((item) => item.id === objectId);
-          if (patch.name || patch.transform?.scale || patch.visible !== undefined) {
-            await fetchJson(`/projects/${state.projectId}/objects/${objectId}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                ...(patch.name ? { name: patch.name } : {}),
-                ...(patch.visible !== undefined ? { visible: patch.visible } : {}),
-                ...(patch.transform?.scale
-                  ? {
-                      transform: {
-                        position: object?.transform?.position || [0, 0, 0],
-                        rotation_euler: object?.transform?.rotation_euler || [0, 0, 0],
-                        scale: patch.transform.scale,
-                      },
-                    }
-                  : {}),
-              }),
-            });
-          }
-
           await fetchJson(`/projects/${state.projectId}/viewer/save-object`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ object_id: objectId }),
+            body: JSON.stringify({
+              object_id: objectId,
+              ...(patch.name ? { name: patch.name } : {}),
+              ...(patch.transform?.scale ? { scale: patch.transform.scale } : {}),
+            }),
           });
           state.selectedObjectId = null;
           await fetchObjects();
@@ -1354,7 +1337,12 @@ def save_viewer_object(
         raise HTTPException(status_code=400, detail="object_id is required")
 
     try:
-        viewer_service.persist_selected_object(project_id, payload.object_id)
+        viewer_service.persist_object_state(
+            project_id,
+            payload.object_id,
+            name=payload.name,
+            scale=payload.scale,
+        )
         loaded_object_ids = viewer_service.set_selected_object(project_id, None)
     except (ProjectNotFoundError, EntityNotFoundError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
