@@ -40,8 +40,10 @@ def test_editor_page_includes_mesh_object_workflow(repo) -> None:
     assert 'accept=".glb,.gltf"' in html
     assert 'id="new-scene-button"' in html
     assert 'id="enhance-button"' in html
+    assert 'id="enhance-prompt"' in html
     assert 'id="enhanced-render-video"' in html
     assert 'id="enhanced-render-meta"' in html
+    assert "turn this video into a photorealistic video" in html
     assert "position: absolute;" in html
     assert "height: 100%;" in html
 

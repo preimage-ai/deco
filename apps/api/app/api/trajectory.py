@@ -221,6 +221,7 @@ def enhance_rendered_video(
             width=payload.width,
             height=payload.height,
             wait_timeout_seconds=payload.ai_wait_timeout_seconds,
+            prompt=payload.prompt,
         )
     except EnhancementUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
