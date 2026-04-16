@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
 
-from apps.api.app.deps import get_asset_ingest_service, get_repo
+from apps.api.app.deps import get_asset_ingest_service, get_repo, get_viewer_service
 from apps.api.app.schemas.asset import AssetCreateRequest, AssetUpdateRequest
 from apps.api.app.schemas.upload import AssetUploadResponse
 from services.assets.glb_ingest import InvalidGlbError
@@ -145,10 +145,12 @@ def delete_asset(
     project_id: str,
     asset_id: str,
     repo: ProjectRepository = Depends(get_repo),
+    viewer_service=Depends(get_viewer_service),
 ) -> Response:
     """Delete an asset and any scene objects using it."""
     try:
         repo.delete_asset(project_id, asset_id)
+        viewer_service.refresh_scene_objects(project_id)
     except (ProjectNotFoundError, EntityNotFoundError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -14,5 +14,8 @@ The current viewer path is intentionally narrow:
 4. Place the object into the scene
 5. Launch the room viewer
 6. Inspect the splat and meshes in the embedded `viser` frame
+7. Click a mesh to edit its transform with interactive gizmos
+
+While a viewer session is active, object create, update, and delete operations are reconciled into the open scene without reloading the room splat.
 
 This is a temporary bridge until the dedicated web editor is implemented under `apps/web`.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from math import pi, sqrt
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -34,7 +35,7 @@ def test_editor_page_includes_mesh_object_workflow(repo) -> None:
     assert 'id="place-object-form"' in html
 
 
-def test_viewer_service_loads_room_asset_and_visible_mesh_objects(repo, tmp_path: Path, monkeypatch) -> None:
+def test_viewer_service_loads_room_asset_and_visible_mesh_objects(repo, monkeypatch) -> None:
     project = repo.create_project(ProjectManifest(name="Viewer Demo"))
     project_dir = repo.project_dir(project.id)
     room_path = project_dir / "assets" / "rooms" / "room.ply"
@@ -97,6 +98,7 @@ def test_viewer_service_loads_room_asset_and_visible_mesh_objects(repo, tmp_path
             self.up_directions: list[str] = []
             self.reset_called = False
             self.gaussian_calls: list[tuple[tuple, dict]] = []
+            self.transform_calls: list[tuple[tuple, dict, "FakeTransformHandle"]] = []
             self.glb_calls: list[tuple[tuple, dict]] = []
 
         def set_up_direction(self, direction: str) -> None:
@@ -108,8 +110,54 @@ def test_viewer_service_loads_room_asset_and_visible_mesh_objects(repo, tmp_path
         def add_gaussian_splats(self, *args, **kwargs) -> None:
             self.gaussian_calls.append((args, kwargs))
 
+        def add_transform_controls(self, *args, **kwargs) -> "FakeTransformHandle":
+            handle = FakeTransformHandle(
+                position=kwargs["position"],
+                wxyz=kwargs["wxyz"],
+                visible=kwargs["visible"],
+            )
+            self.transform_calls.append((args, kwargs, handle))
+            return handle
+
         def add_glb(self, *args, **kwargs) -> None:
+            handle = FakeGlbHandle()
             self.glb_calls.append((args, kwargs))
+            return handle
+
+    class FakeTransformHandle:
+        def __init__(self, *, position, wxyz, visible: bool) -> None:
+            self.position = position
+            self.wxyz = wxyz
+            self.visible = visible
+            self.removed = False
+            self._drag_end_callbacks = []
+
+        def on_drag_end(self, callback):
+            self._drag_end_callbacks.append(callback)
+            return callback
+
+        def trigger_drag_end(self) -> None:
+            for callback in self._drag_end_callbacks:
+                callback(SimpleNamespace())
+
+        def remove(self) -> None:
+            self.removed = True
+
+    class FakeGlbHandle:
+        def __init__(self) -> None:
+            self.removed = False
+            self._click_callbacks = []
+
+        def on_click(self, callback):
+            self._click_callbacks.append(callback)
+            return callback
+
+        def trigger_click(self) -> None:
+            for callback in self._click_callbacks:
+                callback(SimpleNamespace())
+
+        def remove(self) -> None:
+            self.removed = True
 
     class FakeServer:
         instances: list["FakeServer"] = []
@@ -159,11 +207,55 @@ def test_viewer_service_loads_room_asset_and_visible_mesh_objects(repo, tmp_path
     assert len(FakeServer.instances) == 1
     assert server.scene.reset_called is True
     assert len(server.scene.gaussian_calls) == 1
+    assert len(server.scene.transform_calls) == 2
     assert len(server.scene.glb_calls) == 2
+    first_transform_args, first_transform_kwargs, _ = server.scene.transform_calls[0]
+    assert first_transform_args[0] == f"/objects/{chair_obj.id}/control"
+    assert first_transform_kwargs["position"] == (1.0, 2.0, 3.0)
+    assert first_transform_kwargs["wxyz"] == (1.0, 0.0, 0.0, 0.0)
     first_glb_args, first_glb_kwargs = server.scene.glb_calls[0]
-    assert first_glb_args[0] == f"/objects/{chair_obj.id}"
-    assert first_glb_kwargs["position"] == (1.0, 2.0, 3.0)
+    assert first_glb_args[0] == f"/objects/{chair_obj.id}/control/mesh"
     assert first_glb_kwargs["scale"] == (1.5, 1.0, 0.5)
-    assert first_glb_kwargs["wxyz"] == (1.0, 0.0, 0.0, 0.0)
+
+    chair_handles = viewer._object_handles[chair_obj.id]
+    lamp_handles = viewer._object_handles[lamp_obj.id]
+    assert chair_handles.transform.visible is False
+    assert lamp_handles.transform.visible is False
+
+    chair_handles.mesh.trigger_click()
+    assert chair_handles.transform.visible is True
+    assert lamp_handles.transform.visible is False
+
+    chair_handles.transform.position = (4.0, 5.0, 6.0)
+    chair_handles.transform.wxyz = (sqrt(0.5), 0.0, 0.0, sqrt(0.5))
+    chair_handles.transform.trigger_drag_end()
+
+    updated_chair = repo.get_project(project.id).scene.objects[0]
+    assert updated_chair.transform.position == [4.0, 5.0, 6.0]
+    assert round(updated_chair.transform.rotation_euler[2], 6) == round(pi / 2.0, 6)
+
+    plant_path = project_dir / "assets" / "objects" / "plant.glb"
+    plant_path.write_bytes(b"plant")
+    plant_asset = repo.add_asset(
+        project.id,
+        AssetRecord(
+            name="Plant",
+            kind="glb",
+            role="object",
+            source_uri=str(plant_path.relative_to(repo.root)),
+        ),
+    ).assets[-1]
+    plant_obj = ObjectInstance(name="Plant Instance", asset_id=plant_asset.id)
+    repo.add_object(project.id, plant_obj)
+
+    loaded_after_add = viewer.refresh_scene_objects(project.id, select_object_id=plant_obj.id)
+    assert plant_obj.id in loaded_after_add
+    assert viewer._object_handles[plant_obj.id].transform.visible is True
+
+    repo.delete_object(project.id, lamp_obj.id)
+    loaded_after_delete = viewer.refresh_scene_objects(project.id)
+    assert lamp_obj.id not in loaded_after_delete
+    assert lamp_obj.id not in viewer._object_handles
+
     server.stop()
     assert server.stopped is True

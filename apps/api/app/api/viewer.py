@@ -222,7 +222,7 @@ def editor_page(repo: ProjectRepository = Depends(get_repo)) -> str:
         <div class="viewer-wrap">
           <div class="card">
             <h2>Viewer</h2>
-            <p>The room preview loads in a separate `viser` server and is embedded here.</p>
+            <p>The room preview loads in a separate `viser` server and is embedded here. Click a mesh to reveal move and rotate gizmos, and newly placed objects appear without relaunching the viewer.</p>
           </div>
           <iframe id="viewer-frame" title="viser viewer"></iframe>
           <div class="card">
@@ -406,7 +406,7 @@ def editor_page(repo: ProjectRepository = Depends(get_repo)) -> str:
           return;
         }}
         launchProjectSelect.value = projectId;
-        setStatus(`Placed object ${{data.name}} (${{data.id}}). Relaunch the viewer to see it.`);
+        setStatus(`Placed object ${{data.name}} (${{data.id}}). If the viewer is already open, it appears there immediately.`);
       }});
 
       for (const selectEl of [objectProjectSelect, placeProjectSelect]) {{

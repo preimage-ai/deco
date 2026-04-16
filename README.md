@@ -61,6 +61,9 @@ Use it like this:
 4. Place the object into the scene
 5. Click `Launch viewer`
 6. The room and visible objects should load in an embedded `viser` viewer
+7. Click a mesh in the viewer to reveal move and rotate gizmos, then drag it interactively
+
+Once the viewer is open, newly placed objects are synced into the active scene without relaunching it.
 
 `.gltf` uploads currently need to be self-contained. External `.bin` buffers or texture files are not copied into the project yet.
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
-from apps.api.app.deps import get_repo
+from apps.api.app.deps import get_repo, get_viewer_service
 from apps.api.app.schemas.scene import ObjectCreateRequest, ObjectUpdateRequest
 from services.scene_core.project_manifest import ObjectInstance, SceneState
 from services.storage.local_fs import EntityNotFoundError, ProjectNotFoundError, ProjectRepository
@@ -41,12 +41,15 @@ def create_object(
     project_id: str,
     payload: ObjectCreateRequest,
     repo: ProjectRepository = Depends(get_repo),
+    viewer_service=Depends(get_viewer_service),
 ) -> ObjectInstance:
     """Create a placed object instance."""
     obj = ObjectInstance(**payload.model_dump())
     try:
         manifest = repo.add_object(project_id, obj)
-        return next(item for item in manifest.scene.objects if item.id == obj.id)
+        created = next(item for item in manifest.scene.objects if item.id == obj.id)
+        viewer_service.refresh_scene_objects(project_id, select_object_id=obj.id)
+        return created
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except EntityNotFoundError as exc:
@@ -75,6 +78,7 @@ def update_object(
     object_id: str,
     payload: ObjectUpdateRequest,
     repo: ProjectRepository = Depends(get_repo),
+    viewer_service=Depends(get_viewer_service),
 ) -> ObjectInstance:
     """Update a placed object instance."""
     try:
@@ -83,7 +87,9 @@ def update_object(
             object_id,
             payload.model_dump(exclude_none=True),
         )
-        return next(item for item in manifest.scene.objects if item.id == object_id)
+        updated = next(item for item in manifest.scene.objects if item.id == object_id)
+        viewer_service.refresh_scene_objects(project_id, select_object_id=object_id)
+        return updated
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except EntityNotFoundError as exc:
@@ -95,13 +101,14 @@ def delete_object(
     project_id: str,
     object_id: str,
     repo: ProjectRepository = Depends(get_repo),
+    viewer_service=Depends(get_viewer_service),
 ) -> Response:
     """Delete a placed object instance."""
     try:
         repo.delete_object(project_id, object_id)
+        viewer_service.refresh_scene_objects(project_id)
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except EntityNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import cos, sin
+from math import asin, atan2, cos, sin
 from typing import Any
 
 from services.preview.mesh_loader import (
@@ -26,6 +26,14 @@ class ViewerSession:
     loaded_object_ids: list[str]
 
 
+@dataclass
+class ViewerObjectHandles:
+    """Scene handles associated with a placed object."""
+
+    transform: Any
+    mesh: Any
+
+
 class MissingViewerDependencyError(ImportError):
     """Raised when optional viewer dependencies are unavailable."""
 
@@ -46,6 +54,8 @@ class ViewerService:
         self.public_host = public_host
         self._server: Any | None = None
         self._current_session: ViewerSession | None = None
+        self._object_handles: dict[str, ViewerObjectHandles] = {}
+        self._selected_object_id: str | None = None
 
     def ensure_server(self):
         """Start the viser server if needed."""
@@ -78,6 +88,8 @@ class ViewerService:
         server = self.ensure_server()
         server.scene.reset()
         server.scene.set_up_direction("+z")
+        self._object_handles = {}
+        self._selected_object_id = None
         server.scene.add_gaussian_splats(
             "/room/gsplat",
             centers=splat_data.centers,
@@ -85,7 +97,7 @@ class ViewerService:
             opacities=splat_data.opacities,
             covariances=splat_data.covariances,
         )
-        loaded_object_ids = self._load_scene_objects(server=server, manifest=manifest)
+        loaded_object_ids = self._sync_scene_objects(server=server, manifest=manifest)
 
         viewer_url = f"http://{self.public_host}:{self.port}"
         self._current_session = ViewerSession(
@@ -110,40 +122,145 @@ class ViewerService:
         client_id = sorted(clients.keys())[0]
         return clients[client_id]
 
-    def _load_scene_objects(self, server, manifest) -> list[str]:
-        """Add visible mesh objects into the active scene."""
-        assets_by_id = {asset.id: asset for asset in manifest.assets}
-        loaded_object_ids: list[str] = []
+    def refresh_scene_objects(
+        self,
+        project_id: str,
+        *,
+        select_object_id: str | None = None,
+    ) -> list[str]:
+        """Reconcile placed objects into the active viewer without reloading the room."""
+        if self._current_session is None or self._current_session.project_id != project_id:
+            return []
 
-        for obj in manifest.scene.objects:
-            if not obj.visible:
-                continue
-
-            asset = assets_by_id.get(obj.asset_id)
-            if asset is None:
-                raise EntityNotFoundError(f"Asset not found: {obj.asset_id}")
-            if asset.kind not in {"glb", "gltf", "generated_glb"}:
-                raise InvalidMeshAssetError(
-                    f"Viewer supports GLB/GLTF object meshes only, got {asset.kind}"
-                )
-            if not asset.source_uri:
-                raise InvalidMeshAssetError(f"Mesh asset is missing source_uri: {asset.id}")
-
-            source_path = self.repo.root / asset.source_uri
-            if not source_path.exists():
-                raise ProjectNotFoundError(f"Asset file is missing on disk: {source_path}")
-
-            server.scene.add_glb(
-                f"/objects/{obj.id}",
-                glb_data=load_mesh_glb_bytes(source_path, kind=asset.kind),
-                position=_vector3(obj.transform.position, fallback=0.0),
-                wxyz=_euler_xyz_to_wxyz(obj.transform.rotation_euler),
-                scale=_vector3(obj.transform.scale, fallback=1.0),
-                visible=obj.visible,
-            )
-            loaded_object_ids.append(obj.id)
-
+        manifest = self.repo.get_project(project_id)
+        loaded_object_ids = self._sync_scene_objects(
+            server=self.ensure_server(),
+            manifest=manifest,
+            select_object_id=select_object_id,
+        )
+        self._current_session.loaded_object_ids = loaded_object_ids
         return loaded_object_ids
+
+    def _sync_scene_objects(
+        self,
+        server,
+        manifest,
+        *,
+        select_object_id: str | None = None,
+    ) -> list[str]:
+        """Add, update, and remove visible mesh objects in the active scene."""
+        assets_by_id = {asset.id: asset for asset in manifest.assets}
+        visible_objects = [obj for obj in manifest.scene.objects if obj.visible]
+        visible_object_ids = {obj.id for obj in visible_objects}
+
+        for object_id in list(self._object_handles):
+            if object_id not in visible_object_ids:
+                self._remove_object_handles(object_id)
+
+        for obj in visible_objects:
+            self._upsert_object_handles(server=server, manifest=manifest, obj=obj, assets_by_id=assets_by_id)
+
+        if select_object_id is not None:
+            self._select_object(select_object_id)
+        elif self._selected_object_id is not None and self._selected_object_id not in self._object_handles:
+            self._selected_object_id = None
+
+        return [obj.id for obj in visible_objects]
+
+    def _upsert_object_handles(self, server, manifest, obj, assets_by_id: dict) -> None:
+        """Create or replace the scene handles for a placed mesh object."""
+        asset = assets_by_id.get(obj.asset_id)
+        if asset is None:
+            raise EntityNotFoundError(f"Asset not found: {obj.asset_id}")
+        if asset.kind not in {"glb", "gltf", "generated_glb"}:
+            raise InvalidMeshAssetError(
+                f"Viewer supports GLB/GLTF object meshes only, got {asset.kind}"
+            )
+        if not asset.source_uri:
+            raise InvalidMeshAssetError(f"Mesh asset is missing source_uri: {asset.id}")
+
+        source_path = self.repo.root / asset.source_uri
+        if not source_path.exists():
+            raise ProjectNotFoundError(f"Asset file is missing on disk: {source_path}")
+
+        self._remove_object_handles(obj.id)
+        control_name = f"/objects/{obj.id}/control"
+        transform_handle = server.scene.add_transform_controls(
+            control_name,
+            position=_vector3(obj.transform.position, fallback=0.0),
+            wxyz=_euler_xyz_to_wxyz(obj.transform.rotation_euler),
+            visible=obj.id == self._selected_object_id,
+        )
+        mesh_handle = server.scene.add_glb(
+            f"{control_name}/mesh",
+            glb_data=load_mesh_glb_bytes(source_path, kind=asset.kind),
+            scale=_vector3(obj.transform.scale, fallback=1.0),
+            visible=obj.visible,
+        )
+        self._object_handles[obj.id] = ViewerObjectHandles(
+            transform=transform_handle,
+            mesh=mesh_handle,
+        )
+
+        @mesh_handle.on_click
+        def _handle_click(_event, object_id: str = obj.id) -> None:
+            self._select_object(object_id)
+
+        @transform_handle.on_drag_end
+        def _handle_drag_end(_event, object_id: str = obj.id, project_id: str = manifest.id) -> None:
+            self._persist_object_transform(project_id=project_id, object_id=object_id)
+
+    def _remove_object_handles(self, object_id: str) -> None:
+        """Remove existing scene handles for an object if present."""
+        handles = self._object_handles.pop(object_id, None)
+        if handles is None:
+            return
+
+        handles.mesh.remove()
+        handles.transform.remove()
+        if self._selected_object_id == object_id:
+            self._selected_object_id = None
+
+    def _select_object(self, object_id: str) -> None:
+        """Show the transform gizmo for the selected object and hide the previous one."""
+        if self._selected_object_id == object_id:
+            return
+
+        if self._selected_object_id is not None:
+            previous = self._object_handles.get(self._selected_object_id)
+            if previous is not None:
+                previous.transform.visible = False
+
+        current = self._object_handles.get(object_id)
+        if current is None:
+            self._selected_object_id = None
+            return
+
+        current.transform.visible = True
+        self._selected_object_id = object_id
+
+    def _persist_object_transform(self, project_id: str, object_id: str) -> None:
+        """Write an interactively edited object transform back to the project manifest."""
+        handles = self._object_handles.get(object_id)
+        if handles is None:
+            return
+
+        manifest = self.repo.get_project(project_id)
+        obj = next((item for item in manifest.scene.objects if item.id == object_id), None)
+        if obj is None:
+            raise EntityNotFoundError(f"Object not found: {object_id}")
+
+        self.repo.update_object(
+            project_id,
+            object_id,
+            {
+                "transform": {
+                    "position": list(_vector3(handles.transform.position, fallback=0.0)),
+                    "rotation_euler": list(_wxyz_to_euler_xyz(handles.transform.wxyz)),
+                    "scale": list(_vector3(obj.transform.scale, fallback=1.0)),
+                }
+            },
+        )
 
 
 def _import_viser():
@@ -176,3 +293,24 @@ def _euler_xyz_to_wxyz(values: list[float]) -> tuple[float, float, float, float]
         cx * sy * cz + sx * cy * sz,
         cx * cy * sz - sx * sy * cz,
     )
+
+
+def _wxyz_to_euler_xyz(values: tuple[float, float, float, float]) -> tuple[float, float, float]:
+    """Convert a quaternion in WXYZ order into XYZ Euler radians."""
+    w, x, y, z = values
+
+    sinr_cosp = 2.0 * (w * x + y * z)
+    cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
+    rx = atan2(sinr_cosp, cosr_cosp)
+
+    sinp = 2.0 * (w * y - z * x)
+    if abs(sinp) >= 1.0:
+        ry = (3.141592653589793 / 2.0) * (1.0 if sinp >= 0.0 else -1.0)
+    else:
+        ry = asin(sinp)
+
+    siny_cosp = 2.0 * (w * z + x * y)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+    rz = atan2(siny_cosp, cosy_cosp)
+
+    return (rx, ry, rz)
