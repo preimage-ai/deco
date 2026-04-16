@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from apps.api.app.deps import get_generation_service, get_repo, get_viewer_service
+from apps.api.app.deps import get_da3_generation_service, get_repo, get_viewer_service
 from apps.api.app.api.viewer import editor_page
 from apps.api.app.main import create_app
 import apps.api.app.orchestration.viewer_service as viewer_service_module
@@ -23,7 +23,7 @@ def test_editor_and_viewer_routes_registered(tmp_path: Path) -> None:
     os.environ["DECO_VIEWER_PORT"] = "8095"
     get_repo.cache_clear()
     get_viewer_service.cache_clear()
-    get_generation_service.cache_clear()
+    get_da3_generation_service.cache_clear()
 
     app = create_app()
     routes = {route.path for route in app.routes}
@@ -338,7 +338,7 @@ def test_generation_route_returns_generated_project_and_viewer_urls(tmp_path: Pa
     os.environ["DECO_PROJECTS_ROOT"] = str(tmp_path / "projects")
     get_repo.cache_clear()
     get_viewer_service.cache_clear()
-    get_generation_service.cache_clear()
+    get_da3_generation_service.cache_clear()
 
     repo = get_repo()
     generated_asset = AssetRecord(
@@ -374,7 +374,7 @@ def test_generation_route_returns_generated_project_and_viewer_urls(tmp_path: Pa
 
     app = create_app()
     app.dependency_overrides[get_repo] = lambda: repo
-    app.dependency_overrides[get_generation_service] = lambda: FakeGenerationService()
+    app.dependency_overrides[get_da3_generation_service] = lambda: FakeGenerationService()
     app.dependency_overrides[get_viewer_service] = lambda: FakeViewerService()
     client = TestClient(app)
 

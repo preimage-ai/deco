@@ -1,5 +1,6 @@
 -r requirements.txt
 
+hy3dgen>=2.0.2
 ninja
 pybind11
 diffusers

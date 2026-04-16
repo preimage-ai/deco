@@ -6,14 +6,14 @@ import os
 
 from fastapi.testclient import TestClient
 
-from apps.api.app.deps import get_generation_service, get_repo
+from apps.api.app.deps import get_da3_generation_service, get_repo
 from apps.api.app.main import create_app
 
 
 def test_app_registers_core_routes(tmp_path) -> None:
     os.environ["DECO_PROJECTS_ROOT"] = str(tmp_path / "projects")
     get_repo.cache_clear()
-    get_generation_service.cache_clear()
+    get_da3_generation_service.cache_clear()
 
     app = create_app()
     routes = {route.path for route in app.routes}
@@ -37,7 +37,7 @@ def test_app_registers_core_routes(tmp_path) -> None:
 def test_docs_and_favicon_have_custom_branding(tmp_path) -> None:
     os.environ["DECO_PROJECTS_ROOT"] = str(tmp_path / "projects")
     get_repo.cache_clear()
-    get_generation_service.cache_clear()
+    get_da3_generation_service.cache_clear()
 
     client = TestClient(create_app())
 

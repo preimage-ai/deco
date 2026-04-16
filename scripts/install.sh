@@ -8,8 +8,7 @@ VENV_PATH=""
 USE_VENV=1
 INSTALL_DA3=0
 INSTALL_HUNYUAN=0
-HUNYUAN_REPO_PATH="$ROOT_DIR/external/Hunyuan3D-2"
-HUNYUAN_GIT_URL="${DECO_HUNYUAN_GIT_URL:-https://github.com/Tencent/Hunyuan3D-2.git}"
+HUNYUAN_REPO_PATH=""
 
 usage() {
   cat <<'EOF'
@@ -19,9 +18,9 @@ Options:
   --venv PATH         Create/use a virtualenv at PATH
   --skip-venv         Install into the current interpreter
   --python BIN        Python executable to use (default: python3)
-  --with-da3          Install optional Depth Anything 3 requirements
-  --with-hunyuan      Install optional Hunyuan3D requirements and editable repo
-  --hunyuan-repo PATH Use an existing Hunyuan3D checkout path
+  --with-da3          Install optional Depth Anything 3 pip requirements
+  --with-hunyuan      Install optional Hunyuan3D pip requirements
+  --hunyuan-repo PATH Explicit local Hunyuan3D checkout to install editable
   --help              Show this help
 EOF
 }
@@ -87,12 +86,10 @@ if [[ "$INSTALL_DA3" -eq 1 ]]; then
 fi
 
 if [[ "$INSTALL_HUNYUAN" -eq 1 ]]; then
-  if [[ ! -d "$HUNYUAN_REPO_PATH" ]]; then
-    mkdir -p "$(dirname "$HUNYUAN_REPO_PATH")"
-    git clone --depth 1 "$HUNYUAN_GIT_URL" "$HUNYUAN_REPO_PATH"
-  fi
   "$PYTHON_BIN" -m pip install -r requirements-hunyuan.txt
-  "$PYTHON_BIN" -m pip install -e "$HUNYUAN_REPO_PATH"
+  if [[ -n "$HUNYUAN_REPO_PATH" ]]; then
+    "$PYTHON_BIN" -m pip install -e "$HUNYUAN_REPO_PATH"
+  fi
 fi
 
 cat <<EOF
@@ -103,3 +100,17 @@ Base requirements: installed
 Depth Anything 3: $([[ "$INSTALL_DA3" -eq 1 ]] && echo installed || echo skipped)
 Hunyuan3D: $([[ "$INSTALL_HUNYUAN" -eq 1 ]] && echo installed || echo skipped)
 EOF
+
+if [[ "$INSTALL_DA3" -eq 1 ]]; then
+  cat <<'EOF'
+DA3 note: the app now defaults to the Hugging Face model `depth-anything/DA3NESTED-GIANT-LARGE-1.1`.
+Set `DECO_DA3_MODEL` only if you want to override that with a different HF repo id or an explicit local checkpoint path.
+EOF
+fi
+
+if [[ "$INSTALL_HUNYUAN" -eq 1 ]]; then
+  cat <<'EOF'
+Hunyuan note: the app now defaults to the pip-installed `hy3dgen` runtime plus Hugging Face model ids.
+Set `DECO_HUNYUAN_REPO_PATH` or use `--hunyuan-repo` only if you explicitly want a local checkout override.
+EOF
+fi

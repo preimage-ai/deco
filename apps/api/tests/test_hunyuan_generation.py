@@ -134,15 +134,15 @@ def test_texture_generator_wraps_missing_native_extension(tmp_path: Path) -> Non
     service = Hunyuan3DService(
         ingest=None,
         config=Hunyuan3DConfig(
-            repo_path=tmp_path,
             shape_model="shape",
             shape_subfolder="subfolder",
             texture_model="texture",
             text2image_model="text2image",
+            repo_path=tmp_path,
         ),
     )
-    service._runtime = MethodType(  # type: ignore[method-assign]
-        lambda self: {"Hunyuan3DPaintPipeline": _FakePaintPipeline},
+    service._import_symbol = MethodType(  # type: ignore[method-assign]
+        lambda self, module_name, symbol_name, feature_name, wrap_errors=True: _FakePaintPipeline,
         service,
     )
 
@@ -153,3 +153,75 @@ def test_texture_generator_wraps_missing_native_extension(tmp_path: Path) -> Non
         assert "native rasterizer extensions" in str(exc)
     else:
         raise AssertionError("Expected _texture_generator to raise GenerationUnavailableError")
+
+
+def test_shape_generator_does_not_require_texture_runtime(tmp_path: Path) -> None:
+    class _FakeShapePipeline:
+        @classmethod
+        def from_pretrained(cls, model_path: str, **kwargs):
+            return {"model_path": model_path, **kwargs}
+
+    service = Hunyuan3DService(
+        ingest=None,
+        config=Hunyuan3DConfig(
+            shape_model="shape",
+            shape_subfolder="subfolder",
+            texture_model="texture",
+            text2image_model="text2image",
+        ),
+    )
+    service._import_symbol = MethodType(  # type: ignore[method-assign]
+        lambda self, module_name, symbol_name, feature_name, wrap_errors=True: (
+            (_ for _ in ()).throw(AssertionError("texture runtime should stay lazy"))
+            if module_name == "hy3dgen.texgen"
+            else _FakeShapePipeline
+        ),
+        service,
+    )
+
+    pipeline = service._shape_generator()
+
+    assert pipeline["model_path"] == "shape"
+    assert pipeline["subfolder"] == "subfolder"
+    assert pipeline["variant"] == "fp16"
+
+
+def test_local_repo_override_is_only_required_when_explicitly_configured(tmp_path: Path) -> None:
+    class _FakeShapePipeline:
+        @classmethod
+        def from_pretrained(cls, model_path: str, **kwargs):
+            return {"model_path": model_path, **kwargs}
+
+    service = Hunyuan3DService(
+        ingest=None,
+        config=Hunyuan3DConfig(
+            shape_model="shape",
+            shape_subfolder="subfolder",
+            texture_model="texture",
+            text2image_model="text2image",
+        ),
+    )
+    service._import_symbol = MethodType(  # type: ignore[method-assign]
+        lambda self, module_name, symbol_name, feature_name, wrap_errors=True: _FakeShapePipeline,
+        service,
+    )
+    assert service._shape_generator()["model_path"] == "shape"
+
+    explicit_service = Hunyuan3DService(
+        ingest=None,
+        config=Hunyuan3DConfig(
+            shape_model="shape",
+            shape_subfolder="subfolder",
+            texture_model="texture",
+            text2image_model="text2image",
+            repo_path=tmp_path / "missing-repo",
+        ),
+    )
+
+    try:
+        with explicit_service._local_repo_override():
+            pass
+    except GenerationUnavailableError as exc:
+        assert "Configured local Hunyuan3D repo not found" in str(exc)
+    else:
+        raise AssertionError("Expected explicit missing repo override to fail")

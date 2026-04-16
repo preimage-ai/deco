@@ -7,7 +7,7 @@ import tempfile
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
-from apps.api.app.deps import get_generation_service, get_viewer_service
+from apps.api.app.deps import get_da3_generation_service, get_viewer_service
 from apps.api.app.orchestration.viewer_service import (
     MissingViewerDependencyError,
     ViewerService,
@@ -28,7 +28,7 @@ router = APIRouter(prefix="/generation", tags=["generation"])
 @router.post("/create-gsplat", response_model=GeneratedGsplatResponse, status_code=status.HTTP_201_CREATED)
 async def create_gsplat_from_images(
     files: list[UploadFile] = File(...),
-    generation_service: DepthAnythingGenerationService = Depends(get_generation_service),
+    generation_service: DepthAnythingGenerationService = Depends(get_da3_generation_service),
     viewer_service: ViewerService = Depends(get_viewer_service),
 ) -> GeneratedGsplatResponse:
     """Generate a room gsplat from uploaded images and launch it in the viewer."""

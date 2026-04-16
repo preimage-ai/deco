@@ -26,7 +26,7 @@ def get_asset_ingest_service() -> AssetIngestService:
     return AssetIngestService(get_repo())
 
 
-def get_generation_service() -> Hunyuan3DService:
+def get_hunyuan_generation_service() -> Hunyuan3DService:
     """Return the Hunyuan3D generation service."""
     settings: Settings = get_settings()
     return Hunyuan3DService(
@@ -70,7 +70,7 @@ def get_viewer_service() -> ViewerService:
 
 
 @lru_cache(maxsize=1)
-def get_generation_service() -> DepthAnythingGenerationService:
+def get_da3_generation_service() -> DepthAnythingGenerationService:
     """Return the singleton Depth Anything 3 generation service."""
     settings: Settings = get_settings()
     return DepthAnythingGenerationService(

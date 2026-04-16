@@ -36,22 +36,22 @@ From the repository root:
 
 ```bash
 chmod +x scripts/install.sh
-./scripts/install.sh --venv .venv --with-hunyuan
+./scripts/install.sh --venv .venv --with-hunyuan --with-da3
 ```
 
 That creates the virtualenv if needed, upgrades `pip`, and installs:
 
 - base API/runtime requirements
-- optional Hunyuan3D dependencies
-- editable install of `external/Hunyuan3D-2`
+- optional DA3 package from `requirements-da3.txt`
+- optional Hunyuan3D pip requirements from `requirements-hunyuan.txt`
 
 Optional flags:
 
-- `--with-da3` installs the Depth Anything 3 stack from `requirements-da3.txt`
+- `--with-da3` installs the published `depth-anything-3` package from `requirements-da3.txt`
+- `--with-hunyuan` installs the published `hy3dgen` runtime from `requirements-hunyuan.txt`
+- `--hunyuan-repo /path/to/Hunyuan3D-2` is only for an explicit local checkout override
 - `--skip-venv` installs into the currently active interpreter
 - `--python python3.10` chooses a specific Python binary
-
-If `external/Hunyuan3D-2` is missing, the script clones it automatically from GitHub before installing it.
 
 ### Manual Install
 
@@ -60,15 +60,8 @@ python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip setuptools wheel
 python -m pip install -r requirements.txt
-git clone https://github.com/Tencent/Hunyuan3D-2.git external/Hunyuan3D-2
-python -m pip install -r requirements-hunyuan.txt
-python -m pip install -e external/Hunyuan3D-2
-```
-
-Optional DA3 install:
-
-```bash
 python -m pip install -r requirements-da3.txt
+python -m pip install -r requirements-hunyuan.txt
 ```
 
 ## Run The App
@@ -107,7 +100,7 @@ Once a room is loaded, the editor lets you:
 
 Relevant environment variables:
 
-- `DECO_HUNYUAN_REPO_PATH` default `external/Hunyuan3D-2`
+- `DECO_HUNYUAN_REPO_PATH` optional explicit local checkout override
 - `DECO_HUNYUAN_SHAPE_MODEL` default `tencent/Hunyuan3D-2`
 - `DECO_HUNYUAN_SHAPE_SUBFOLDER` default `hunyuan3d-dit-v2-0`
 - `DECO_HUNYUAN_TEXTURE_MODEL` default `tencent/Hunyuan3D-2`
@@ -119,17 +112,17 @@ Object generation endpoints:
 - `POST /projects/{project_id}/assets/generate-from-image`
 - `POST /projects/{project_id}/assets/generate-from-text`
 
-The current implementation returns `503` when CUDA is unavailable. Texture generation can also fail if Hunyuan3D native rasterizer extensions are not built; in that case retry with `include_texture=false`.
+The current implementation returns `503` when CUDA is unavailable. By default it uses the pip-installed `hy3dgen` runtime and Hugging Face model ids. Texture generation can still fail if Hunyuan3D native rasterizer extensions are not built; in that case retry with `include_texture=false`. Use `DECO_HUNYUAN_REPO_PATH` only if you explicitly want a local code checkout override.
 
 ## Depth Anything 3 Notes
 
 Relevant environment variables:
 
-- `DECO_DA3_MODEL`
+- `DECO_DA3_MODEL` default `depth-anything/DA3NESTED-GIANT-LARGE-1.1`
 - `DECO_DA3_DEVICE` default `auto`
 - `DECO_DA3_PROCESS_RES` default `504`
 
-If `DECO_DA3_MODEL` is unset, deco first looks for a local checkpoint under repo `models/` or `model/`, then falls back to `depth-anything/DA3NESTED-GIANT-LARGE-1.1`.
+If `DECO_DA3_MODEL` is unset, deco loads `depth-anything/DA3NESTED-GIANT-LARGE-1.1` from Hugging Face by default. To use a local checkpoint, set `DECO_DA3_MODEL` explicitly to that directory path.
 
 The current DA3 integration saves a generated `.ply` and renders it through this repo's own `viser` flow. It does not require the upstream `gsplat` rasterizer package for the current room-generation path.
 
@@ -161,8 +154,7 @@ DECO_PROJECTS_ROOT=./projects \
 DECO_VIEWER_HOST=0.0.0.0 \
 DECO_VIEWER_PORT=8080 \
 DECO_VIEWER_PUBLIC_HOST=localhost \
-DECO_HUNYUAN_REPO_PATH=./external/Hunyuan3D-2 \
-DECO_DA3_MODEL=./model/DA3-GIANT-1.1 \
+DECO_DA3_MODEL=depth-anything/DA3NESTED-GIANT-LARGE-1.1 \
 python -m uvicorn apps.api.app.main:app --host 0.0.0.0 --port 8000
 ```
 
@@ -179,7 +171,6 @@ PYTHONPATH=. PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest apps/api/tests -q
 - `apps/api` FastAPI application and tests
 - `apps/web` placeholder for a separate frontend app
 - `services` domain packages for generation, storage, rendering, viewer, and scene state
-- `external/Hunyuan3D-2` optional upstream checkout used for object generation
 - `projects` local project and artifact storage
 - `configs` example config templates
 - `scripts` developer scripts

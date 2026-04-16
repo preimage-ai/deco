@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
+import importlib
 import importlib.util
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,11 +23,11 @@ class GenerationUnavailableError(RuntimeError):
 class Hunyuan3DConfig:
     """Runtime configuration for the Hunyuan3D adapter."""
 
-    repo_path: Path
     shape_model: str
     shape_subfolder: str
     texture_model: str
     text2image_model: str
+    repo_path: Path | None = None
     device: str = "auto"
 
 
@@ -161,8 +164,12 @@ class Hunyuan3DService:
 
     def _shape_generator(self):
         if self._shape_pipeline is None:
-            runtime = self._runtime()
-            self._shape_pipeline = runtime["Hunyuan3DDiTFlowMatchingPipeline"].from_pretrained(
+            pipeline_cls = self._import_symbol(
+                "hy3dgen.shapegen",
+                "Hunyuan3DDiTFlowMatchingPipeline",
+                feature_name="shape-generation",
+            )
+            self._shape_pipeline = pipeline_cls.from_pretrained(
                 self._config.shape_model,
                 subfolder=self._config.shape_subfolder,
                 variant="fp16",
@@ -171,11 +178,14 @@ class Hunyuan3DService:
 
     def _texture_generator(self):
         if self._texture_pipeline is None:
-            runtime = self._runtime()
             try:
-                self._texture_pipeline = runtime["Hunyuan3DPaintPipeline"].from_pretrained(
-                    self._config.texture_model
+                pipeline_cls = self._import_symbol(
+                    "hy3dgen.texgen",
+                    "Hunyuan3DPaintPipeline",
+                    feature_name="texture-generation",
+                    wrap_errors=False,
                 )
+                self._texture_pipeline = pipeline_cls.from_pretrained(self._config.texture_model)
             except Exception as exc:  # pragma: no cover - depends on local runtime
                 raise GenerationUnavailableError(self._format_texture_init_error(exc)) from exc
         return self._texture_pipeline
@@ -183,7 +193,12 @@ class Hunyuan3DService:
     def _text_to_image_generator(self):
         if self._text2image_pipeline is None:
             runtime = self._runtime()
-            self._text2image_pipeline = runtime["HunyuanDiTPipeline"](
+            pipeline_cls = self._import_symbol(
+                "hy3dgen.text2image",
+                "HunyuanDiTPipeline",
+                feature_name="text-to-image",
+            )
+            self._text2image_pipeline = pipeline_cls(
                 model_path=self._config.text2image_model,
                 device=self._device(runtime["torch"]),
             )
@@ -191,25 +206,22 @@ class Hunyuan3DService:
 
     def _background_worker(self):
         if self._background_remover is None:
-            runtime = self._runtime()
-            self._background_remover = runtime["BackgroundRemover"]()
+            remover_cls = self._import_symbol(
+                "hy3dgen.rembg",
+                "BackgroundRemover",
+                feature_name="background-removal",
+            )
+            self._background_remover = remover_cls()
         return self._background_remover
 
     def _runtime(self) -> dict[str, Any]:
-        if not self._config.repo_path.exists():
-            raise GenerationUnavailableError(
-                f"Hunyuan3D repo not found at {self._config.repo_path}"
-            )
         try:
             import torch
             from PIL import Image
-            from hy3dgen.rembg import BackgroundRemover
-            from hy3dgen.shapegen import Hunyuan3DDiTFlowMatchingPipeline
-            from hy3dgen.texgen import Hunyuan3DPaintPipeline
-            from hy3dgen.text2image import HunyuanDiTPipeline
         except Exception as exc:  # pragma: no cover - depends on local runtime
             raise GenerationUnavailableError(
-                "Hunyuan3D dependencies are not importable in the current environment"
+                "Hunyuan3D base dependencies are not importable in the current environment. "
+                "Install the required pip packages for torch/Pillow and the Hunyuan runtime."
             ) from exc
 
         device = self._device(torch)
@@ -220,11 +232,51 @@ class Hunyuan3DService:
         return {
             "torch": torch,
             "Image": Image,
-            "BackgroundRemover": BackgroundRemover,
-            "Hunyuan3DDiTFlowMatchingPipeline": Hunyuan3DDiTFlowMatchingPipeline,
-            "Hunyuan3DPaintPipeline": Hunyuan3DPaintPipeline,
-            "HunyuanDiTPipeline": HunyuanDiTPipeline,
         }
+
+    @contextlib.contextmanager
+    def _local_repo_override(self):
+        repo_path = self._config.repo_path
+        if repo_path is None:
+            yield
+            return
+        if not repo_path.exists():
+            raise GenerationUnavailableError(
+                f"Configured local Hunyuan3D repo not found at {repo_path}"
+            )
+        repo_str = str(repo_path)
+        sys.path.insert(0, repo_str)
+        importlib.invalidate_caches()
+        try:
+            yield
+        finally:
+            try:
+                sys.path.remove(repo_str)
+            except ValueError:
+                pass
+
+    def _import_symbol(
+        self,
+        module_name: str,
+        symbol_name: str,
+        *,
+        feature_name: str,
+        wrap_errors: bool = True,
+    ):
+        try:
+            with self._local_repo_override():
+                module = importlib.import_module(module_name)
+            return getattr(module, symbol_name)
+        except GenerationUnavailableError:
+            raise
+        except Exception as exc:
+            if not wrap_errors:
+                raise
+            raise GenerationUnavailableError(
+                f"Hunyuan3D {feature_name} dependencies are not importable. "
+                "Install the pip-provided Hunyuan runtime, or configure "
+                "`DECO_HUNYUAN_REPO_PATH` to point at a compatible local checkout."
+            ) from exc
 
     def _device(self, torch_module) -> str:
         if self._config.device != "auto":
@@ -237,18 +289,19 @@ class Hunyuan3DService:
             "custom_rasterizer",
             "custom_rasterizer_kernel",
             "mesh_processor",
+            "differentiable_renderer",
         }:
             return (
                 "Hunyuan3D texture generation is unavailable because its native rasterizer "
-                "extensions are not installed. Build/install "
-                "`external/Hunyuan3D-2/hy3dgen/texgen/custom_rasterizer` and "
-                "`external/Hunyuan3D-2/hy3dgen/texgen/differentiable_renderer`, "
+                "extensions are not installed. This only affects textured output. "
+                "Build/install the Hunyuan texture-generation native extensions, "
                 "or retry with `include_texture=false`."
             )
         if importlib.util.find_spec("custom_rasterizer_kernel") is None:
             return (
                 "Hunyuan3D texture generation is unavailable because the "
-                "`custom_rasterizer_kernel` extension is missing. Build/install the native "
-                "texture-generation extensions or retry with `include_texture=false`."
+                "`custom_rasterizer_kernel` extension is missing. Textured output is optional; "
+                "build/install the native texture-generation extensions or retry with "
+                "`include_texture=false`."
             )
         return f"Hunyuan3D texture generation failed during initialization: {message}"

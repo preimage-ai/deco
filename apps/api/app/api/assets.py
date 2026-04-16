@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 
 from apps.api.app.deps import (
     get_asset_ingest_service,
-    get_generation_service,
+    get_hunyuan_generation_service,
     get_repo,
     get_viewer_service,
 )
@@ -129,7 +129,7 @@ async def generate_object_from_image(
     guidance_scale: float = Form(7.5),
     octree_resolution: int = Form(256),
     num_chunks: int = Form(20000),
-    generation: Hunyuan3DService = Depends(get_generation_service),
+    generation: Hunyuan3DService = Depends(get_hunyuan_generation_service),
 ) -> AssetUploadResponse:
     """Generate a GLB object from an input image with Hunyuan3D."""
     asset_name = name or Path(file.filename or "generated-object.png").stem
@@ -173,7 +173,7 @@ async def generate_object_from_image(
 def generate_object_from_text(
     project_id: str,
     payload: TextTo3DRequest,
-    generation: Hunyuan3DService = Depends(get_generation_service),
+    generation: Hunyuan3DService = Depends(get_hunyuan_generation_service),
 ) -> AssetUploadResponse:
     """Generate a GLB object from a text prompt with Hunyuan3D."""
     asset_name = payload.name or payload.prompt[:48].strip() or "generated-object"
