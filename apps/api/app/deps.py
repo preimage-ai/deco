@@ -7,6 +7,7 @@ from functools import lru_cache
 from apps.api.app.config import Settings, get_settings
 from services.assets.file_ingest import AssetIngestService
 from apps.api.app.orchestration.viewer_service import ViewerService
+from services.rendering.trajectory_render import TrajectoryRenderService
 from services.storage.local_fs import ProjectRepository
 
 
@@ -32,3 +33,8 @@ def get_viewer_service() -> ViewerService:
         port=settings.viewer_port,
         public_host=settings.viewer_public_host,
     )
+
+
+def get_render_service() -> TrajectoryRenderService:
+    """Return the trajectory render service."""
+    return TrajectoryRenderService(get_repo())

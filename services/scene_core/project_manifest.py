@@ -61,6 +61,7 @@ class CameraKeyframe(BaseModel):
     time_seconds: float
     position: list[float]
     target: list[float] | None = None
+    up_direction: list[float] | None = None
     rotation_euler: list[float] | None = None
     fov_degrees: float | None = None
 
@@ -105,4 +106,3 @@ class ProjectManifest(BaseModel):
     trajectories: list[TrajectoryRecord] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
-

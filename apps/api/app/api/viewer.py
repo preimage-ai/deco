@@ -161,6 +161,31 @@ def editor_page(repo: ProjectRepository = Depends(get_repo)) -> str:
             </label>
             <button type="submit" class="secondary">Launch viewer</button>
           </form>
+          <form id="trajectory-form">
+            <label>Trajectory name<input name="name" placeholder="Camera path" required /></label>
+            <label>Duration seconds<input name="duration_seconds" type="number" min="1" step="0.1" value="5" /></label>
+            <button type="submit">Create trajectory</button>
+          </form>
+          <form id="keyframe-form">
+            <label>Trajectory
+              <select id="trajectory-select" name="trajectory_id" required>
+                <option value="">Select trajectory</option>
+              </select>
+            </label>
+            <label>Keyframe time<input name="time_seconds" type="number" min="0" step="0.1" value="0" /></label>
+            <button type="submit" class="secondary">Capture current view</button>
+          </form>
+          <form id="render-form">
+            <label>Trajectory
+              <select id="render-trajectory-select" name="trajectory_id" required>
+                <option value="">Select trajectory</option>
+              </select>
+            </label>
+            <label>FPS<input name="fps" type="number" min="1" step="1" value="24" /></label>
+            <label>Width<input name="width" type="number" min="64" step="1" value="1280" /></label>
+            <label>Height<input name="height" type="number" min="64" step="1" value="720" /></label>
+            <button type="submit">Render MP4</button>
+          </form>
           <div id="status">Ready.</div>
         </div>
         <div class="viewer-wrap">
@@ -169,6 +194,11 @@ def editor_page(repo: ProjectRepository = Depends(get_repo)) -> str:
             <p>The room preview loads in a separate `viser` server and is embedded here.</p>
           </div>
           <iframe id="viewer-frame" title="viser viewer"></iframe>
+          <div class="card">
+            <h2>Trajectory Replay</h2>
+            <p>Render playback while the viewer tab is connected.</p>
+            <video id="render-video" controls style="width:100%; border-radius:12px; background:#111;"></video>
+          </div>
         </div>
       </section>
     </main>
@@ -176,7 +206,10 @@ def editor_page(repo: ProjectRepository = Depends(get_repo)) -> str:
       const statusEl = document.getElementById("status");
       const projectSelect = document.getElementById("project-select");
       const launchProjectSelect = document.getElementById("launch-project-select");
+      const trajectorySelect = document.getElementById("trajectory-select");
+      const renderTrajectorySelect = document.getElementById("render-trajectory-select");
       const viewerFrame = document.getElementById("viewer-frame");
+      const renderVideo = document.getElementById("render-video");
 
       function setStatus(message) {{
         statusEl.textContent = message;
@@ -187,6 +220,15 @@ def editor_page(repo: ProjectRepository = Depends(get_repo)) -> str:
           const option = document.createElement("option");
           option.value = project.id;
           option.textContent = `${{project.name}} (${{project.id}})`;
+          selectEl.appendChild(option);
+        }}
+      }}
+
+      function addTrajectoryOption(trajectory) {{
+        for (const selectEl of [trajectorySelect, renderTrajectorySelect]) {{
+          const option = document.createElement("option");
+          option.value = trajectory.id;
+          option.textContent = `${{trajectory.name}} (${{trajectory.id}})`;
           selectEl.appendChild(option);
         }}
       }}
@@ -258,6 +300,90 @@ def editor_page(repo: ProjectRepository = Depends(get_repo)) -> str:
         }}
         viewerFrame.src = data.viewer_url;
         setStatus(`Viewer loaded for asset ${{data.asset_id}} at ${{data.viewer_url}}`);
+      }});
+
+      document.getElementById("trajectory-form").addEventListener("submit", async (event) => {{
+        event.preventDefault();
+        const projectId = launchProjectSelect.value || projectSelect.value;
+        if (!projectId) {{
+          setStatus("Create or select a project first.");
+          return;
+        }}
+        const form = new FormData(event.currentTarget);
+        const payload = {{
+          name: form.get("name"),
+          duration_seconds: Number(form.get("duration_seconds") || 5),
+        }};
+        const response = await fetch(`/projects/${{projectId}}/trajectories`, {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify(payload),
+        }});
+        const data = await response.json();
+        if (!response.ok) {{
+          setStatus(`Trajectory creation failed: ${{data.detail || JSON.stringify(data)}}`);
+          return;
+        }}
+        addTrajectoryOption(data);
+        trajectorySelect.value = data.id;
+        renderTrajectorySelect.value = data.id;
+        setStatus(`Created trajectory ${{data.name}} (${{data.id}}).`);
+        event.currentTarget.reset();
+      }});
+
+      document.getElementById("keyframe-form").addEventListener("submit", async (event) => {{
+        event.preventDefault();
+        const projectId = launchProjectSelect.value || projectSelect.value;
+        const form = new FormData(event.currentTarget);
+        const trajectoryId = form.get("trajectory_id");
+        if (!projectId || !trajectoryId) {{
+          setStatus("Select a project and trajectory first.");
+          return;
+        }}
+        const payload = {{
+          time_seconds: Number(form.get("time_seconds") || 0),
+        }};
+        const response = await fetch(`/projects/${{projectId}}/trajectories/${{trajectoryId}}/capture-keyframe`, {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify(payload),
+        }});
+        const data = await response.json();
+        if (!response.ok) {{
+          setStatus(`Keyframe capture failed: ${{data.detail || JSON.stringify(data)}}`);
+          return;
+        }}
+        setStatus(`Captured keyframe. Trajectory now has ${{data.keyframes.length}} keyframes.`);
+      }});
+
+      document.getElementById("render-form").addEventListener("submit", async (event) => {{
+        event.preventDefault();
+        const projectId = launchProjectSelect.value || projectSelect.value;
+        const form = new FormData(event.currentTarget);
+        const trajectoryId = form.get("trajectory_id");
+        if (!projectId || !trajectoryId) {{
+          setStatus("Select a project and trajectory first.");
+          return;
+        }}
+        setStatus("Rendering trajectory video...");
+        const payload = {{
+          fps: Number(form.get("fps") || 24),
+          width: Number(form.get("width") || 1280),
+          height: Number(form.get("height") || 720),
+        }};
+        const response = await fetch(`/projects/${{projectId}}/trajectories/${{trajectoryId}}/render`, {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify(payload),
+        }});
+        const data = await response.json();
+        if (!response.ok) {{
+          setStatus(`Render failed: ${{data.detail || JSON.stringify(data)}}`);
+          return;
+        }}
+        renderVideo.src = data.artifact_url;
+        renderVideo.load();
+        setStatus(`Rendered ${{data.filename}} with ${{data.frame_count}} frames.`);
       }});
     </script>
   </body>

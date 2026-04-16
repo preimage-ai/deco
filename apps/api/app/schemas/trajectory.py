@@ -30,3 +30,26 @@ class TrajectoryUpdateRequest(BaseModel):
     velocity: VelocityProfile | None = None
     keyframes: list[CameraKeyframe] | None = None
 
+
+class CaptureKeyframeRequest(BaseModel):
+    """Payload for capturing a keyframe from the active viewer camera."""
+
+    time_seconds: float | None = None
+
+
+class RenderTrajectoryRequest(BaseModel):
+    """Payload for rendering a saved trajectory to video."""
+
+    width: int = 1280
+    height: int = 720
+    fps: int = 24
+
+
+class RenderTrajectoryResponse(BaseModel):
+    """Response payload for a rendered trajectory artifact."""
+
+    filename: str
+    relative_path: str
+    artifact_url: str
+    frame_count: int
+    fps: int

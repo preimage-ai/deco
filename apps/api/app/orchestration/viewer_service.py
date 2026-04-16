@@ -91,3 +91,12 @@ class ViewerService:
     def get_session(self) -> ViewerSession | None:
         """Return the current viewer session if one exists."""
         return self._current_session
+
+    def get_active_client(self):
+        """Return the connected client that should drive capture and rendering."""
+        server = self.ensure_server()
+        clients = server.get_clients()
+        if not clients:
+            raise EntityNotFoundError("No active viewer client is connected")
+        client_id = sorted(clients.keys())[0]
+        return clients[client_id]
