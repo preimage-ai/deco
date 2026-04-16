@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -171,9 +172,12 @@ class Hunyuan3DService:
     def _texture_generator(self):
         if self._texture_pipeline is None:
             runtime = self._runtime()
-            self._texture_pipeline = runtime["Hunyuan3DPaintPipeline"].from_pretrained(
-                self._config.texture_model
-            )
+            try:
+                self._texture_pipeline = runtime["Hunyuan3DPaintPipeline"].from_pretrained(
+                    self._config.texture_model
+                )
+            except Exception as exc:  # pragma: no cover - depends on local runtime
+                raise GenerationUnavailableError(self._format_texture_init_error(exc)) from exc
         return self._texture_pipeline
 
     def _text_to_image_generator(self):
@@ -226,3 +230,25 @@ class Hunyuan3DService:
         if self._config.device != "auto":
             return self._config.device
         return "cuda" if torch_module.cuda.is_available() else "cpu"
+
+    def _format_texture_init_error(self, exc: Exception) -> str:
+        message = str(exc).strip() or exc.__class__.__name__
+        if isinstance(exc, ModuleNotFoundError) and exc.name in {
+            "custom_rasterizer",
+            "custom_rasterizer_kernel",
+            "mesh_processor",
+        }:
+            return (
+                "Hunyuan3D texture generation is unavailable because its native rasterizer "
+                "extensions are not installed. Build/install "
+                "`external/Hunyuan3D-2/hy3dgen/texgen/custom_rasterizer` and "
+                "`external/Hunyuan3D-2/hy3dgen/texgen/differentiable_renderer`, "
+                "or retry with `include_texture=false`."
+            )
+        if importlib.util.find_spec("custom_rasterizer_kernel") is None:
+            return (
+                "Hunyuan3D texture generation is unavailable because the "
+                "`custom_rasterizer_kernel` extension is missing. Build/install the native "
+                "texture-generation extensions or retry with `include_texture=false`."
+            )
+        return f"Hunyuan3D texture generation failed during initialization: {message}"

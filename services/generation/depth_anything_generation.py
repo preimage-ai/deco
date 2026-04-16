@@ -215,7 +215,26 @@ class DepthAnythingGenerationService:
     def _resolve_model_source(self) -> str:
         """Return the resolved DA3 model source used for loading."""
         if self._resolved_model_source is None:
-            self._resolved_model_source = self.model_name
+            configured = self.model_name
+            configured_path = Path(configured).expanduser()
+            if configured_path.exists():
+                self._resolved_model_source = str(configured_path.resolve())
+                return self._resolved_model_source
+
+            if "/" in configured and not configured.startswith((".", "..")):
+                try:
+                    from huggingface_hub import snapshot_download
+
+                    self._resolved_model_source = snapshot_download(
+                        configured,
+                        local_files_only=True,
+                    )
+                    return self._resolved_model_source
+                except Exception:
+                    self._resolved_model_source = configured
+                    return self._resolved_model_source
+
+            self._resolved_model_source = configured
         return self._resolved_model_source
 
     def _get_save_gaussian_ply(self):
