@@ -1,70 +1,64 @@
 # Deco Room GSplat Studio
 
-Browser-based tooling for turning room photos or existing `gsplat` captures into editable scenes, placing 3D assets, generating new object meshes, authoring camera shots, and rendering MP4 output through a FastAPI-backed workspace.
+Deco is a FastAPI-based workspace for turning room photos or existing `gsplat` captures into editable scenes, placing 3D assets, authoring camera shots, and rendering video output from the browser.
 
-## Current Scope
+It combines a local project store, a server-rendered editor at `/editor`, a live `viser` viewer session, and optional AI-assisted generation paths for room splats, object meshes, and post-processed renders.
 
-- FastAPI backend for projects, assets, scene objects, trajectories, renders, and viewer launch
-- Temporary browser editor served at `/editor`
-- Room creation from input images through the optional Depth Anything 3 integration
+## Features
+
+- Project, asset, scene, trajectory, and render management through a FastAPI backend
+- Browser-based editor served at `/editor`
+- Room creation from image sets through optional Depth Anything 3 integration
 - Existing room `.ply` upload and live `viser` viewer launch
 - Object upload for `.glb` and self-contained `.gltf`
 - Hunyuan3D object generation from image or text prompt
-- Local trajectory capture and MP4 rendering
-- Optional Runway Aleph post-processing for rendered videos
+- Trajectory capture, keyframe authoring, and local MP4 rendering
+- Optional Runway Aleph enhancement for rendered videos
 
-## What Is Stale In Older Docs
+## Architecture
 
-These older assumptions are no longer accurate:
+The current runtime stack includes:
 
-- trajectory capture and render flow now exists in the `/editor` UI
-- Hunyuan3D object generation is wired into the API and editor
-- Runway enhancement is a separate render enhancement step, not part of the initial render request
-- the main browser UI is currently served by the API app at `/editor`; `apps/web` is not the active frontend
-- API tests live under `apps/api/tests`
+- `apps/api`: FastAPI application, API routes, orchestration, and tests
+- `services`: generation, rendering, storage, viewer, and scene-state packages
+- `projects`: local artifact and manifest store
+- `scripts`: installation and development helper scripts
+- `docs`: API contract and architecture notes
 
-## Installation
+The browser UI is currently served from the API app at `/editor`. The `apps/web` directory remains reserved for a future standalone frontend.
+
+## Quick Start
 
 ### Requirements
 
-- Python 3.10+ recommended
-- CUDA-capable GPU if you want practical Hunyuan3D or DA3 generation
+- Python 3.10+
+- CUDA-capable GPU for practical Hunyuan3D or DA3 generation workloads
 
-### Common Install Script
+### Install
 
-From the repository root:
+Use the shared install script from the repository root:
 
 ```bash
 chmod +x scripts/install.sh
 ./scripts/install.sh --venv .venv --with-hunyuan --with-da3
-```
-
-That creates the virtualenv if needed, upgrades `pip`, and installs:
-
-- base API/runtime requirements
-- optional DA3 package from `requirements-da3.txt`
-- optional Hunyuan3D pip requirements from `requirements-hunyuan.txt`
-
-Optional flags:
-
-- `--with-da3` installs the published `depth-anything-3` package from `requirements-da3.txt`
-- `--with-hunyuan` installs the published `hy3dgen` runtime from `requirements-hunyuan.txt`
-- `--hunyuan-repo /path/to/Hunyuan3D-2` is only for an explicit local checkout override
-- `--skip-venv` installs into the currently active interpreter
-- `--python python3.10` chooses a specific Python binary
-
-### Manual Install
-
-```bash
-python -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip setuptools wheel
-python -m pip install -r requirements.txt
-python -m pip install -r requirements-da3.txt
-python -m pip install -r requirements-hunyuan.txt
 ```
 
-## Run The App
+This installs:
+
+- base runtime requirements from `requirements.txt`
+- optional Depth Anything 3 runtime from `requirements-da3.txt`
+- optional Hunyuan3D runtime from `requirements-hunyuan.txt`
+
+Common options:
+
+- `--with-da3` installs DA3 support
+- `--with-hunyuan` installs Hunyuan3D support
+- `--hunyuan-repo /path/to/Hunyuan3D-2` uses an explicit local Hunyuan checkout override
+- `--skip-venv` installs into the active interpreter
+- `--python python3.10` selects a specific Python executable
+
+### Run
 
 Start the API server from the repository root:
 
@@ -77,28 +71,65 @@ Then open:
 - `http://localhost:8000/docs`
 - `http://localhost:8000/editor`
 
-The `viser` viewer runs on port `8080` by default.
+The embedded `viser` viewer runs on port `8080` by default.
 
-## Editor Flow
+## Editor Workflow
 
-`/editor` supports two room entry paths:
+The `/editor` flow supports two room entry paths:
 
-1. Generate a room splat from overlapping images through `POST /generation/create-gsplat`
+1. Generate a room splat from overlapping input images through `POST /generation/create-gsplat`
 2. Upload an existing room `.ply` through `POST /projects/{project_id}/assets/upload-room`
 
-Once a room is loaded, the editor lets you:
+Once a room is loaded, the editor supports:
 
-- upload `.glb` or self-contained `.gltf` objects
-- generate new GLB objects from image or text with Hunyuan3D
-- place and transform objects in the live viewer
-- create trajectories, capture keyframes, and render MP4s
-- optionally submit the latest render to Runway via `POST /projects/{project_id}/renders/{filename}/enhance`
+- object upload with `.glb` and self-contained `.gltf`
+- object generation through Hunyuan3D image-to-3D and text-to-3D routes
+- live object placement and transforms inside the viewer
+- trajectory creation and keyframe capture
+- local MP4 rendering
+- optional Runway enhancement via `POST /projects/{project_id}/renders/{filename}/enhance`
 
-`.gltf` uploads must currently be self-contained. External `.bin` buffers or texture sidecars are not copied into the project.
+`.gltf` uploads must currently be self-contained. External `.bin` buffers and sidecar textures are not copied into the project store.
 
-## Hunyuan3D Notes
+## Model and Runtime Sourcing
 
-Relevant environment variables:
+Deco is configured to be pip- and Hugging Face-first by default.
+
+### Depth Anything 3
+
+- Python package source: `requirements-da3.txt`
+- Default model: `depth-anything/DA3NESTED-GIANT-LARGE-1.1`
+- Override variable: `DECO_DA3_MODEL`
+
+If `DECO_DA3_MODEL` is unset, Deco loads the default DA3 model from Hugging Face. To use a local checkpoint, set `DECO_DA3_MODEL` explicitly to a local directory path.
+
+### Hunyuan3D
+
+- Python package source: `requirements-hunyuan.txt`
+- Default shape model: `tencent/Hunyuan3D-2`
+- Default text-to-image model: `Tencent-Hunyuan/HunyuanDiT-v1.1-Diffusers-Distilled`
+- Optional local code override: `DECO_HUNYUAN_REPO_PATH`
+
+By default, Deco uses the pip-installed `hy3dgen` runtime and Hugging Face model ids. Use `DECO_HUNYUAN_REPO_PATH` only if you explicitly want to override the installed runtime with a local checkout.
+
+Texture generation may still require native Hunyuan rasterizer extensions. If those extensions are unavailable, retry with `include_texture=false`.
+
+## Configuration
+
+General runtime settings:
+
+- `DECO_PROJECTS_ROOT` default `projects`
+- `DECO_VIEWER_HOST` default `0.0.0.0`
+- `DECO_VIEWER_PORT` default `8080`
+- `DECO_VIEWER_PUBLIC_HOST` default `localhost`
+
+DA3 settings:
+
+- `DECO_DA3_MODEL` default `depth-anything/DA3NESTED-GIANT-LARGE-1.1`
+- `DECO_DA3_DEVICE` default `auto`
+- `DECO_DA3_PROCESS_RES` default `504`
+
+Hunyuan settings:
 
 - `DECO_HUNYUAN_REPO_PATH` optional explicit local checkout override
 - `DECO_HUNYUAN_SHAPE_MODEL` default `tencent/Hunyuan3D-2`
@@ -107,28 +138,7 @@ Relevant environment variables:
 - `DECO_HUNYUAN_TEXT2IMAGE_MODEL` default `Tencent-Hunyuan/HunyuanDiT-v1.1-Diffusers-Distilled`
 - `DECO_HUNYUAN_DEVICE` default `auto`
 
-Object generation endpoints:
-
-- `POST /projects/{project_id}/assets/generate-from-image`
-- `POST /projects/{project_id}/assets/generate-from-text`
-
-The current implementation returns `503` when CUDA is unavailable. By default it uses the pip-installed `hy3dgen` runtime and Hugging Face model ids. Texture generation can still fail if Hunyuan3D native rasterizer extensions are not built; in that case retry with `include_texture=false`. Use `DECO_HUNYUAN_REPO_PATH` only if you explicitly want a local code checkout override.
-
-## Depth Anything 3 Notes
-
-Relevant environment variables:
-
-- `DECO_DA3_MODEL` default `depth-anything/DA3NESTED-GIANT-LARGE-1.1`
-- `DECO_DA3_DEVICE` default `auto`
-- `DECO_DA3_PROCESS_RES` default `504`
-
-If `DECO_DA3_MODEL` is unset, deco loads `depth-anything/DA3NESTED-GIANT-LARGE-1.1` from Hugging Face by default. To use a local checkpoint, set `DECO_DA3_MODEL` explicitly to that directory path.
-
-The current DA3 integration saves a generated `.ply` and renders it through this repo's own `viser` flow. It does not require the upstream `gsplat` rasterizer package for the current room-generation path.
-
-## Runway Enhancement
-
-Configuration is read from environment variables or the repo-root `.env` file:
+Runway settings:
 
 - `DECO_RUNWAY_API_KEY`
 - `DECO_RUNWAY_API_VERSION` default `2024-11-06`
@@ -137,15 +147,6 @@ Configuration is read from environment variables or the repo-root `.env` file:
 - `DECO_RUNWAY_POLL_INTERVAL_SECONDS` default `5`
 
 The app also accepts `RUNWAYML_API_SECRET` as a fallback API key source.
-
-## Environment Variables
-
-General runtime configuration:
-
-- `DECO_PROJECTS_ROOT` default `projects`
-- `DECO_VIEWER_HOST` default `0.0.0.0`
-- `DECO_VIEWER_PORT` default `8080`
-- `DECO_VIEWER_PUBLIC_HOST` default `localhost`
 
 Example:
 
@@ -158,20 +159,43 @@ DECO_DA3_MODEL=depth-anything/DA3NESTED-GIANT-LARGE-1.1 \
 python -m uvicorn apps.api.app.main:app --host 0.0.0.0 --port 8000
 ```
 
-## Tests
+## API Surface
 
-This environment has a broken globally installed Hydra pytest plugin, so run tests with plugin autoload disabled:
+Current backend scope includes:
+
+- `GET /healthz`
+- `GET /docs`
+- `GET /editor`
+- `POST /generation/create-gsplat`
+- project CRUD under `/projects`
+- asset upload, download, and generation routes under `/projects/{project_id}/assets`
+- scene object CRUD under `/projects/{project_id}/objects`
+- trajectory CRUD and render routes under `/projects/{project_id}/trajectories`
+- render enhancement and artifact download under `/projects/{project_id}/renders`
+- viewer launch routes under `/projects/{project_id}/viewer`
+
+Additional details are documented in [docs/api-contract.md](/home/altair/preimage/deco/docs/api-contract.md).
+
+## Development
+
+Run tests with plugin autoload disabled in this environment:
 
 ```bash
 PYTHONPATH=. PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest apps/api/tests -q
 ```
 
+For a narrower verification pass:
+
+```bash
+PYTHONPATH=. PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest apps/api/tests/test_app_bootstrap.py -q
+```
+
 ## Repository Layout
 
-- `apps/api` FastAPI application and tests
-- `apps/web` placeholder for a separate frontend app
-- `services` domain packages for generation, storage, rendering, viewer, and scene state
+- `apps/api` FastAPI application, dependency wiring, API routes, and tests
+- `apps/web` reserved for a future standalone frontend
+- `services` domain packages for generation, rendering, storage, viewer, and scene state
 - `projects` local project and artifact storage
-- `configs` example config templates
-- `scripts` developer scripts
-- `docs` API and architecture notes
+- `configs` example configuration templates
+- `scripts` install and helper scripts
+- `docs` architecture and API documentation
