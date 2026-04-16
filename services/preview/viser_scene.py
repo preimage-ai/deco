@@ -5,9 +5,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
-from plyfile import PlyData
-from viser import transforms as tf
+try:
+    import numpy as np
+except ImportError:  # pragma: no cover - environment-dependent
+    np = None
+
+try:
+    from plyfile import PlyData
+except ImportError:  # pragma: no cover - environment-dependent
+    PlyData = None
+
+try:
+    from viser import transforms as tf
+except ImportError:  # pragma: no cover - environment-dependent
+    tf = None
 
 
 class InvalidGaussianSplatError(ValueError):
@@ -26,6 +37,11 @@ class GaussianSplatData:
 
 def load_gaussian_splat_ply(path: Path, *, center: bool = True) -> GaussianSplatData:
     """Load a gaussian splat PLY into arrays expected by viser."""
+    if np is None or PlyData is None or tf is None:
+        raise InvalidGaussianSplatError(
+            "Gaussian splat viewing requires `numpy`, `plyfile`, and `viser` to be installed"
+        )
+
     ply_data = PlyData.read(path)
     vertex = ply_data["vertex"]
     required = {

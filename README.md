@@ -10,11 +10,11 @@ Current runnable scope:
 - Room `gsplat .ply` upload flow
 - Minimal browser editor at `/editor`
 - `viser`-based room viewer launched from the editor
+- Mesh object upload and placement for `.glb` and self-contained `.gltf` assets
 
 Not implemented yet:
 
 - Separate frontend app under `apps/web`
-- Object placement UI
 - Trajectory editing UI
 - Final rendering pipeline
 
@@ -29,6 +29,10 @@ Not implemented yet:
 - `numpy`
 - `python-multipart`
 - `pytest` for tests
+
+Optional for `.gltf` object support:
+
+- `trimesh`
 
 If you are using the same environment as development here, launch `uvicorn` through `python -m uvicorn` so it uses the correct interpreter and installed dependencies.
 
@@ -53,8 +57,12 @@ Use it like this:
 
 1. Create a project
 2. Upload a room `gsplat` PLY file
-3. Click `Launch viewer`
-4. The room should load in an embedded `viser` viewer
+3. Upload a mesh object as `.glb` or self-contained `.gltf`
+4. Place the object into the scene
+5. Click `Launch viewer`
+6. The room and visible objects should load in an embedded `viser` viewer
+
+`.gltf` uploads currently need to be self-contained. External `.bin` buffers or texture files are not copied into the project yet.
 
 The `viser` viewer runs on port `8080` by default.
 

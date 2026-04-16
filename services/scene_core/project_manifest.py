@@ -32,7 +32,7 @@ class AssetRecord(BaseModel):
 
     id: str = Field(default_factory=lambda: new_id("asset"))
     name: str
-    kind: Literal["gsplat_ply", "glb", "generated_glb"] = "glb"
+    kind: Literal["gsplat_ply", "glb", "gltf", "generated_glb"] = "glb"
     role: Literal["room", "object"] = "object"
     source_uri: str | None = None
     preview_uri: str | None = None
@@ -105,4 +105,3 @@ class ProjectManifest(BaseModel):
     trajectories: list[TrajectoryRecord] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
-

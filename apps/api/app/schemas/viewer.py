@@ -18,3 +18,4 @@ class ViewerLaunchResponse(BaseModel):
     project_id: str
     asset_id: str
     source_uri: str
+    loaded_object_ids: list[str]

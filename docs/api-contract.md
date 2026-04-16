@@ -23,3 +23,5 @@ Uploaded files are stored under:
 
 - `projects/<project_id>/assets/rooms/`
 - `projects/<project_id>/assets/objects/`
+
+Object uploads support `.glb` and self-contained `.gltf`.
