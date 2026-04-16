@@ -108,6 +108,39 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         border: 1px solid var(--line-strong);
         box-shadow: var(--shadow);
       }
+      .workflow-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+      .workflow-card {
+        width: 100%;
+        padding: 24px;
+        border-radius: calc(var(--radius-xl) - 6px);
+        border: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(13, 26, 46, 0.9), rgba(9, 16, 30, 0.92));
+        color: var(--ink);
+        display: grid;
+        gap: 14px;
+        text-align: left;
+        box-shadow: var(--shadow);
+        transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+      }
+      .workflow-card:hover {
+        transform: translateY(-2px);
+        border-color: rgba(110, 231, 200, 0.42);
+        background: linear-gradient(180deg, rgba(16, 31, 53, 0.96), rgba(9, 16, 30, 0.98));
+      }
+      .workflow-card h2 {
+        margin: 0;
+        font-size: 24px;
+        letter-spacing: -0.04em;
+      }
+      .workflow-card p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.6;
+      }
       .landing-copy,
       .workspace-header-copy,
       .stack,
@@ -201,6 +234,12 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         padding: 13px 18px;
         font-weight: 600;
         transition: transform 180ms ease, box-shadow 180ms ease;
+      }
+      a.button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none;
       }
       .button:hover {
         transform: translateY(-1px);
@@ -399,6 +438,26 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         letter-spacing: 0.18em;
         text-transform: uppercase;
       }
+      .flash-banner {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 10;
+        width: min(420px, calc(100vw - 40px));
+        padding: 14px 16px;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: rgba(12, 24, 42, 0.92);
+        box-shadow: var(--shadow);
+        color: var(--ink);
+        backdrop-filter: blur(20px);
+      }
+      .flash-banner[data-tone="error"] {
+        border-color: rgba(255, 143, 143, 0.34);
+      }
+      .flash-banner[data-tone="success"] {
+        border-color: rgba(110, 231, 200, 0.34);
+      }
       .badge-live::before {
         content: "";
         width: 8px;
@@ -416,6 +475,9 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
       @media (max-width: 900px) {
         .shell {
           padding: 18px;
+        }
+        .workflow-grid {
+          grid-template-columns: 1fr;
         }
         .workspace-grid {
           grid-template-columns: 1fr;
@@ -436,10 +498,34 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
   </head>
   <body>
     <div class="shell">
+      <div id="flash-banner" class="flash-banner" data-tone="info" hidden>Choose a workflow to begin.</div>
+
       <section id="landing" class="landing">
         <div class="landing-card">
           <div class="landing-copy">
             <span class="eyebrow">deco studio</span>
+            <h1>Choose your gsplat workflow.</h1>
+            <p>Start from images with Depth Anything 3 or jump straight into editing an existing room splat. Both paths land in the same live viewer and render workspace.</p>
+          </div>
+          <div class="workflow-grid">
+            <button id="workflow-create-button" class="workflow-card" type="button">
+              <span class="pill">Depth Anything 3</span>
+              <h2>Gsplat creation workflow</h2>
+              <p>Drop a set of overlapping images, generate a fresh room splat, preview it immediately, and save the resulting `.ply` to disk.</p>
+            </button>
+            <button id="workflow-edit-button" class="workflow-card" type="button">
+              <span class="pill">Editor + render</span>
+              <h2>Normal gsplat editing and video rendering workflow</h2>
+              <p>Open an existing room `.ply`, place `.glb` or `.gltf` meshes into the live viewer, and capture keyframes for video rendering.</p>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section id="editing-landing" class="landing" hidden>
+        <div class="landing-card">
+          <div class="landing-copy">
+            <span class="eyebrow">existing gsplat</span>
             <h1>Drop a Gaussian Splat to begin.</h1>
             <p>Bring in a room `.ply` file and the editor will create a fresh scene, launch the viewer, and get you ready to place meshes immediately.</p>
           </div>
@@ -453,7 +539,32 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
             <p class="meta-copy">No project setup, no naming, no extra clicks. If you prefer, click to browse for a file.</p>
             <div class="cta-row">
               <button id="room-browse-button" class="button button-primary" type="button">Choose `.ply`</button>
+              <button id="editing-back-button" class="button button-secondary" type="button">Back</button>
               <span class="ghost-note">The first drop creates a new scene automatically.</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="creation-landing" class="landing" hidden>
+        <div class="landing-card">
+          <div class="landing-copy">
+            <span class="eyebrow">image to gsplat</span>
+            <h1>Drop images to generate a room splat.</h1>
+            <p>Upload a small set of overlapping room photos and deco will run Depth Anything 3, open the resulting gsplat in the viewer, and give you a one-click download for the generated `.ply`.</p>
+          </div>
+          <div id="generation-dropzone" class="dropzone" tabindex="0">
+            <div class="chip-row">
+              <span class="pill">Multi-image input</span>
+              <span class="pill">Auto gsplat generation</span>
+              <span class="pill">Viewer launches itself</span>
+            </div>
+            <h2>Drag and drop your input images here</h2>
+            <p class="meta-copy">Use `.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp`, `.tif`, or `.tiff`. The first run may take longer because the DA3 model weights may need to download.</p>
+            <div class="cta-row">
+              <button id="generation-browse-button" class="button button-primary" type="button">Choose images</button>
+              <button id="creation-back-button" class="button button-secondary" type="button">Back</button>
+              <span class="ghost-note">Overlapping views usually produce a stronger splat.</span>
             </div>
           </div>
         </div>
@@ -469,6 +580,7 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
           <div class="workspace-header-actions">
             <span class="stat-pill"><strong id="scene-object-count">0</strong> meshes</span>
             <span class="stat-pill"><strong id="scene-trajectory-count">0</strong> shots</span>
+            <a id="download-room-link" class="button button-secondary" href="#" download hidden>Download GSplat</a>
             <button id="new-scene-button" class="button button-secondary" type="button">Start New Scene</button>
           </div>
         </header>
@@ -604,7 +716,7 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
 
             <div id="status-card" class="status-card" data-tone="info">
               <div class="status-label">Status</div>
-              <div id="status">Drop a room `.ply` to begin.</div>
+              <div id="status">Choose a workflow to begin.</div>
             </div>
           </aside>
 
@@ -622,7 +734,7 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
                 <div id="stage-hint" class="stage-hint">
                   <div>
                     <strong>The viewer will appear here.</strong>
-                    <div>Upload a room first, then drop meshes into the scene.</div>
+                    <div>Load or generate a room, then drop meshes into the scene.</div>
                   </div>
                 </div>
               </div>
@@ -656,24 +768,35 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
     </div>
 
     <input id="room-file-input" class="file-input" type="file" accept=".ply" />
+    <input id="generation-file-input" class="file-input" type="file" accept=".jpg,.jpeg,.png,.webp,.bmp,.tif,.tiff" multiple />
     <input id="mesh-file-input" class="file-input" type="file" accept=".glb,.gltf" />
     <input id="generate-image-file-input" class="file-input" type="file" accept="image/*" />
 
     <script>
       const PROJECT_STORAGE_KEY = "deco_active_project_id";
       const landing = document.getElementById("landing");
+      const editingLanding = document.getElementById("editing-landing");
+      const creationLanding = document.getElementById("creation-landing");
       const workspace = document.getElementById("workspace");
       const roomDropzone = document.getElementById("room-dropzone");
+      const generationDropzone = document.getElementById("generation-dropzone");
       const meshDropzone = document.getElementById("mesh-dropzone");
       const roomFileInput = document.getElementById("room-file-input");
+      const generationFileInput = document.getElementById("generation-file-input");
       const meshFileInput = document.getElementById("mesh-file-input");
       const generateImageFileInput = document.getElementById("generate-image-file-input");
+      const workflowCreateButton = document.getElementById("workflow-create-button");
+      const workflowEditButton = document.getElementById("workflow-edit-button");
       const roomBrowseButton = document.getElementById("room-browse-button");
+      const generationBrowseButton = document.getElementById("generation-browse-button");
       const meshBrowseButton = document.getElementById("mesh-browse-button");
       const generateImageButton = document.getElementById("generate-image-button");
       const generateTextButton = document.getElementById("generate-text-button");
       const generateTextPrompt = document.getElementById("generate-text-prompt");
+      const editingBackButton = document.getElementById("editing-back-button");
+      const creationBackButton = document.getElementById("creation-back-button");
       const newSceneButton = document.getElementById("new-scene-button");
+      const downloadRoomLink = document.getElementById("download-room-link");
       const sceneTitle = document.getElementById("scene-title");
       const sceneSubtitle = document.getElementById("scene-subtitle");
       const sceneObjectCount = document.getElementById("scene-object-count");
@@ -696,13 +819,16 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
       const enhanceButton = document.getElementById("enhance-button");
       const statusCard = document.getElementById("status-card");
       const statusEl = document.getElementById("status");
+      const flashBanner = document.getElementById("flash-banner");
       const viewerFrame = document.getElementById("viewer-frame");
       const renderVideo = document.getElementById("render-video");
       const enhancedRenderVideo = document.getElementById("enhanced-render-video");
       const enhancedRenderMeta = document.getElementById("enhanced-render-meta");
+      const STAGE_DEFAULT_HINT = "<div><strong>The viewer will appear here.</strong><div>Load or generate a room, then drop meshes into the scene.</div></div>";
 
       const state = {
         projectId: null,
+        projectName: null,
         roomAssetId: null,
         objectCount: 0,
         trajectories: [],
@@ -710,11 +836,15 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         selectedObjectId: null,
         openObjectId: null,
         lastRenderFilename: null,
+        workflowMode: null,
       };
 
       function setStatus(message, tone = "info") {
         statusCard.dataset.tone = tone;
         statusEl.textContent = message;
+        flashBanner.dataset.tone = tone;
+        flashBanner.textContent = message;
+        flashBanner.hidden = !message;
       }
 
       function resetEnhancedRenderPanel() {
@@ -728,27 +858,60 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         enhanceButton.disabled = !state.projectId || !state.lastRenderFilename;
       }
 
-      function showLanding() {
+      function showWorkflowSelector() {
         landing.hidden = false;
+        editingLanding.hidden = true;
+        creationLanding.hidden = true;
+        workspace.hidden = true;
+      }
+
+      function showEditingLanding() {
+        landing.hidden = true;
+        editingLanding.hidden = false;
+        creationLanding.hidden = true;
+        workspace.hidden = true;
+      }
+
+      function showCreationLanding() {
+        landing.hidden = true;
+        editingLanding.hidden = true;
+        creationLanding.hidden = false;
         workspace.hidden = true;
       }
 
       function showWorkspace() {
         landing.hidden = true;
+        editingLanding.hidden = true;
+        creationLanding.hidden = true;
         workspace.hidden = false;
       }
 
-      function formatSceneLabel(projectId) {
-        return projectId ? `Scene ${projectId.slice(-6)}` : "Fresh Scene";
+      function updateDownloadLink() {
+        if (!state.projectId || !state.roomAssetId) {
+          downloadRoomLink.hidden = true;
+          downloadRoomLink.removeAttribute("href");
+          return;
+        }
+        downloadRoomLink.hidden = false;
+        downloadRoomLink.href = `/projects/${state.projectId}/assets/${state.roomAssetId}/download`;
+      }
+
+      function formatSceneLabel() {
+        return state.projectName || (state.projectId ? `Scene ${state.projectId.slice(-6)}` : "Fresh Scene");
       }
 
       function updateSceneChrome() {
-        sceneTitle.textContent = formatSceneLabel(state.projectId);
-        sceneSubtitle.textContent = state.roomAssetId
-          ? "Drop meshes, then click them inside the viewer to reveal move and rotate gizmos."
-          : "Upload a room `.ply` to activate the viewer stage.";
+        sceneTitle.textContent = formatSceneLabel();
+        if (state.roomAssetId) {
+          sceneSubtitle.textContent = "Drop meshes, then click them inside the viewer to reveal move and rotate gizmos.";
+        } else if (state.workflowMode === "create") {
+          sceneSubtitle.textContent = "Drop overlapping images to generate a room splat with Depth Anything 3.";
+        } else {
+          sceneSubtitle.textContent = "Upload a room `.ply` to activate the viewer stage.";
+        }
         sceneObjectCount.textContent = String(state.objectCount);
         sceneTrajectoryCount.textContent = String(state.trajectories.length);
+        updateDownloadLink();
       }
 
       function formatVector(values) {
@@ -767,6 +930,10 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
       function humanizeName(filename) {
         const base = fileStem(filename).replace(/[_-]+/g, " ").trim();
         return base ? base.replace(/\\b\\w/g, (match) => match.toUpperCase()) : "Mesh";
+      }
+
+      function pluralize(count, noun) {
+        return `${count} ${noun}${count === 1 ? "" : "s"}`;
       }
 
       function isExtension(file, allowedExtensions) {
@@ -965,14 +1132,21 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
 
       function applyManifest(manifest) {
         state.projectId = manifest.id;
+        state.projectName = manifest.name;
         state.roomAssetId = manifest.scene.room_asset_id;
         state.objectCount = manifest.scene.objects.length;
+        const roomAsset = manifest.assets.find((asset) => asset.id === manifest.scene.room_asset_id);
+        if (roomAsset) {
+          state.workflowMode = roomAsset.metadata?.generated_by === "depth_anything_3" ? "create" : "edit";
+        }
         localStorage.setItem(PROJECT_STORAGE_KEY, manifest.id);
         updateSceneChrome();
       }
 
-      function clearWorkspaceState() {
+      function clearWorkspaceState(options = {}) {
+        const preserveWorkflow = options.preserveWorkflow === true;
         state.projectId = null;
+        state.projectName = null;
         state.roomAssetId = null;
         state.objectCount = 0;
         state.trajectories = [];
@@ -980,6 +1154,9 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         state.selectedObjectId = null;
         state.openObjectId = null;
         state.lastRenderFilename = null;
+        if (!preserveWorkflow) {
+          state.workflowMode = null;
+        }
         localStorage.removeItem(PROJECT_STORAGE_KEY);
         viewerFrame.src = "about:blank";
         renderVideo.removeAttribute("src");
@@ -988,7 +1165,7 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         populateTrajectorySelects();
         setViewerBadge("waiting");
         stageHint.hidden = false;
-        stageHint.innerHTML = "<div><strong>The viewer will appear here.</strong><div>Upload a room first, then drop meshes into the scene.</div></div>";
+        stageHint.innerHTML = STAGE_DEFAULT_HINT;
         updateSceneChrome();
         renderObjectList();
       }
@@ -1027,8 +1204,9 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
           setStatus("Room uploads must be `.ply` Gaussian splat files.", "error");
           return;
         }
+        state.workflowMode = "edit";
         showWorkspace();
-        clearWorkspaceState();
+        clearWorkspaceState({ preserveWorkflow: true });
         setStatus(`Creating a fresh scene for ${file.name}…`);
         setViewerBadge("uploading");
         stageHint.hidden = false;
@@ -1048,9 +1226,56 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
           await fetchTrajectories();
           await launchViewer(upload.asset.id);
         } catch (error) {
+          clearWorkspaceState({ preserveWorkflow: true });
+          showEditingLanding();
           setStatus(`Room upload failed: ${error.message}`, "error");
-          showLanding();
-          clearWorkspaceState();
+        }
+      }
+
+      async function startGeneratedScene(files) {
+        if (!Array.isArray(files) || !files.length) {
+          setStatus("Upload at least one image to generate a gsplat.", "error");
+          return;
+        }
+        if (files.some((file) => !isExtension(file, [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"]))) {
+          setStatus("Generation inputs must be supported image files.", "error");
+          return;
+        }
+
+        state.workflowMode = "create";
+        showWorkspace();
+        clearWorkspaceState({ preserveWorkflow: true });
+        setStatus(`Generating a gsplat from ${pluralize(files.length, "image")}… The first run may take longer while the DA3 model is prepared.`);
+        setViewerBadge("generating");
+        stageHint.hidden = false;
+        stageHint.innerHTML = "<div><strong>Running Depth Anything 3…</strong><div>Estimating geometry and exporting a room gsplat from your images.</div></div>";
+        try {
+          const formData = new FormData();
+          for (const file of files) {
+            formData.append("files", file);
+          }
+          const data = await fetchJson("/generation/create-gsplat", {
+            method: "POST",
+            body: formData,
+          });
+          state.projectId = data.project_id;
+          state.projectName = data.project_name;
+          state.roomAssetId = data.asset.id;
+          state.objectCount = data.loaded_object_ids.length;
+          localStorage.setItem(PROJECT_STORAGE_KEY, data.project_id);
+          await fetchTrajectories();
+          viewerFrame.src = data.viewer_url;
+          setViewerBadge("viewer live", true);
+          stageHint.hidden = true;
+          updateSceneChrome();
+          setStatus(
+            `Generated a room gsplat from ${pluralize(data.input_image_count, "image")}. The viewer is live, and you can download the generated .ply from the header.`,
+            "success",
+          );
+        } catch (error) {
+          clearWorkspaceState({ preserveWorkflow: true });
+          showCreationLanding();
+          setStatus(`GSplat generation failed: ${error.message}`, "error");
         }
       }
 
@@ -1252,7 +1477,8 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         }
       }
 
-      function attachDropzone(zone, input, extensions, handler) {
+      function attachDropzone(zone, input, extensions, handler, options = {}) {
+        const multiple = options.multiple === true;
         for (const eventName of ["dragenter", "dragover"]) {
           zone.addEventListener(eventName, (event) => {
             event.preventDefault();
@@ -1266,15 +1492,15 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
           });
         }
         zone.addEventListener("drop", async (event) => {
-          const file = event.dataTransfer?.files?.[0];
-          if (!file) {
+          const files = Array.from(event.dataTransfer?.files || []);
+          if (!files.length) {
             return;
           }
-          if (!isExtension(file, extensions)) {
+          if (files.some((file) => !isExtension(file, extensions))) {
             setStatus(`Expected ${extensions.join(" or ")} for this drop target.`, "error");
             return;
           }
-          await handler(file);
+          await handler(multiple ? files : files[0]);
         });
         zone.addEventListener("click", () => input.click());
         zone.addEventListener("keydown", (event) => {
@@ -1284,10 +1510,10 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
           }
         });
         input.addEventListener("change", async () => {
-          const file = input.files?.[0];
+          const files = Array.from(input.files || []);
           input.value = "";
-          if (file) {
-            await handler(file);
+          if (files.length) {
+            await handler(multiple ? files : files[0]);
           }
         });
       }
@@ -1295,9 +1521,9 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
       async function restoreSession() {
         const projectId = localStorage.getItem(PROJECT_STORAGE_KEY);
         if (!projectId) {
-          showLanding();
+          showWorkflowSelector();
           clearWorkspaceState();
-          setStatus("Drop a room `.ply` to begin.");
+          setStatus("Choose a workflow to begin.");
           return;
         }
         try {
@@ -1306,16 +1532,16 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
           await fetchObjects();
           await fetchTrajectories();
           if (!manifest.scene.room_asset_id) {
-            showLanding();
-            setStatus("Your saved scene has no room asset yet. Drop a `.ply` to continue.");
+            showWorkflowSelector();
+            setStatus("Your saved scene has no room asset yet. Choose a workflow to continue.");
             return;
           }
           showWorkspace();
           await launchViewer();
         } catch (_error) {
           clearWorkspaceState();
-          showLanding();
-          setStatus("Starting fresh. Drop a room `.ply` to begin.");
+          showWorkflowSelector();
+          setStatus("Starting fresh. Choose a workflow to begin.");
         }
       }
 
@@ -1442,8 +1668,19 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
 
       newSceneButton.addEventListener("click", () => {
         clearWorkspaceState();
-        showLanding();
-        setStatus("Drop a room `.ply` to start a new scene.");
+        showWorkflowSelector();
+        setStatus("Choose a workflow to start a new scene.");
+      });
+
+      workflowCreateButton.addEventListener("click", () => {
+        state.workflowMode = "create";
+        showCreationLanding();
+        setStatus("Drop images to generate a fresh gsplat.");
+      });
+      workflowEditButton.addEventListener("click", () => {
+        state.workflowMode = "edit";
+        showEditingLanding();
+        setStatus("Drop a room `.ply` to begin editing.");
       });
 
       refreshObjectsButton.addEventListener("click", async () => {
@@ -1454,6 +1691,10 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
       roomBrowseButton.addEventListener("click", (event) => {
         event.stopPropagation();
         roomFileInput.click();
+      });
+      generationBrowseButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        generationFileInput.click();
       });
       meshBrowseButton.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -1477,11 +1718,29 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         }
       });
 
+      editingBackButton.addEventListener("click", () => {
+        clearWorkspaceState();
+        showWorkflowSelector();
+        setStatus("Choose a workflow to begin.");
+      });
+      creationBackButton.addEventListener("click", () => {
+        clearWorkspaceState();
+        showWorkflowSelector();
+        setStatus("Choose a workflow to begin.");
+      });
+
       attachDropzone(roomDropzone, roomFileInput, [".ply"], startRoomScene);
+      attachDropzone(
+        generationDropzone,
+        generationFileInput,
+        [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"],
+        startGeneratedScene,
+        { multiple: true },
+      );
       attachDropzone(meshDropzone, meshFileInput, [".glb", ".gltf"], addMeshToScene);
 
       clearWorkspaceState();
-      showLanding();
+      showWorkflowSelector();
       resetTrajectoryDraft();
       restoreSession();
     </script>
