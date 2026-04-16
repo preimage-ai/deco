@@ -7,7 +7,12 @@ from fastapi.responses import HTMLResponse
 
 from apps.api.app.deps import get_repo, get_viewer_service
 from apps.api.app.orchestration.viewer_service import MissingViewerDependencyError
-from apps.api.app.schemas.viewer import ViewerLaunchRequest, ViewerLaunchResponse
+from apps.api.app.schemas.viewer import (
+    ViewerLaunchRequest,
+    ViewerLaunchResponse,
+    ViewerObjectSelectionRequest,
+    ViewerObjectSelectionResponse,
+)
 from services.preview.mesh_loader import InvalidMeshAssetError, MissingMeshDependencyError
 from services.preview.viser_scene import InvalidGaussianSplatError
 from services.storage.local_fs import EntityNotFoundError, ProjectNotFoundError, ProjectRepository
@@ -248,9 +253,76 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
       }
+      .object-list {
+        display: grid;
+        gap: 10px;
+      }
+      .object-card {
+        display: grid;
+        gap: 12px;
+        padding: 14px;
+        border-radius: 18px;
+        border: 1px solid rgba(149, 179, 222, 0.14);
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .object-card.is-selected {
+        border-color: rgba(110, 231, 200, 0.55);
+        box-shadow: 0 0 0 1px rgba(110, 231, 200, 0.16) inset;
+      }
+      .object-card strong {
+        font-size: 15px;
+      }
+      .object-card-summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        cursor: pointer;
+      }
+      .object-card-summary button {
+        flex: 1;
+        text-align: left;
+        background: transparent;
+        color: inherit;
+        border: none;
+        padding: 0;
+      }
+      .object-card-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 999px;
+        border: 1px solid rgba(149, 179, 222, 0.2);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--ink);
+        font-size: 14px;
+        transition: transform 160ms ease;
+      }
+      .object-card.is-open .object-card-toggle {
+        transform: rotate(180deg);
+      }
+      .object-card-body[hidden] {
+        display: none !important;
+      }
+      .object-card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .empty-state {
+        padding: 18px;
+        border-radius: 18px;
+        border: 1px dashed rgba(149, 179, 222, 0.18);
+        color: var(--muted);
+        text-align: center;
+      }
       .stage-frame {
         position: relative;
         min-height: 720px;
+        height: min(78vh, 960px);
         border-radius: calc(var(--radius-lg) - 4px);
         overflow: hidden;
         border: 1px solid rgba(149, 179, 222, 0.14);
@@ -259,10 +331,21 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
       iframe,
       video {
         width: 100%;
-        min-height: 100%;
         border: 0;
         border-radius: calc(var(--radius-lg) - 4px);
         background: rgba(4, 8, 16, 0.8);
+      }
+      iframe {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        min-height: 100%;
+        display: block;
+      }
+      video {
+        display: block;
+        min-height: 100%;
       }
       .stage-hint {
         position: absolute;
@@ -321,6 +404,7 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         }
         .stage-frame {
           min-height: 520px;
+          height: 62vh;
         }
         .inline-grid {
           grid-template-columns: 1fr;
@@ -381,6 +465,19 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
                 <span class="ghost-note">New objects appear without reloading the viewer.</span>
               </div>
             </div>
+
+            <section class="panel stack">
+              <div class="panel-header">
+                <div>
+                  <h2>Scene Objects</h2>
+                  <p>Edit, hide, select, or delete placed meshes. Changes persist to the project manifest.</p>
+                </div>
+                <button id="refresh-objects-button" class="button button-secondary" type="button">Refresh</button>
+              </div>
+              <div id="object-list" class="object-list">
+                <div class="empty-state">No meshes placed yet.</div>
+              </div>
+            </section>
 
             <form id="trajectory-form" class="panel stack">
               <div class="panel-header">
@@ -513,6 +610,8 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
       const sceneTrajectoryCount = document.getElementById("scene-trajectory-count");
       const viewerBadge = document.getElementById("viewer-badge");
       const stageHint = document.getElementById("stage-hint");
+      const objectList = document.getElementById("object-list");
+      const refreshObjectsButton = document.getElementById("refresh-objects-button");
       const trajectorySelect = document.getElementById("trajectory-select");
       const renderTrajectorySelect = document.getElementById("render-trajectory-select");
       const trajectoryDuration = document.getElementById("trajectory-duration");
@@ -533,6 +632,9 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         roomAssetId: null,
         objectCount: 0,
         trajectories: [],
+        objects: [],
+        selectedObjectId: null,
+        openObjectId: null,
       };
 
       function setStatus(message, tone = "info") {
@@ -561,6 +663,10 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
           : "Upload a room `.ply` to activate the viewer stage.";
         sceneObjectCount.textContent = String(state.objectCount);
         sceneTrajectoryCount.textContent = String(state.trajectories.length);
+      }
+
+      function formatVector(values) {
+        return values.map((value) => Number(value).toFixed(2)).join(", ");
       }
 
       function setViewerBadge(label, isLive = false) {
@@ -613,6 +719,97 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         resetTrajectoryDraft();
       }
 
+      function renderObjectList() {
+        objectList.innerHTML = "";
+        if (!state.objects.length) {
+          objectList.innerHTML = '<div class="empty-state">No meshes placed yet.</div>';
+          return;
+        }
+
+        for (const object of state.objects) {
+          const card = document.createElement("div");
+          const isOpen = state.openObjectId === object.id;
+          card.className = `object-card${state.selectedObjectId === object.id ? " is-selected" : ""}${isOpen ? " is-open" : ""}`;
+          const transform = object.transform || {};
+          card.innerHTML = `
+            <div class="object-card-summary">
+              <button type="button" data-action="toggle-open">
+                <strong>${object.name}</strong>
+                <p>${object.id}</p>
+              </button>
+              <div class="action-row">
+                <span class="badge">${object.visible ? "visible" : "hidden"}</span>
+                <button class="object-card-toggle" type="button" data-action="toggle-open" aria-label="Toggle object details">▾</button>
+              </div>
+            </div>
+            <div class="object-card-body" ${isOpen ? "" : "hidden"}>
+              <p>Position: ${formatVector(transform.position || [0, 0, 0])}</p>
+              <p>Rotation: ${formatVector(transform.rotation_euler || [0, 0, 0])}</p>
+              <p>Scale: ${formatVector(transform.scale || [1, 1, 1])}</p>
+              <label>
+                Name
+                <input data-field="name" value="${object.name.replace(/"/g, "&quot;")}" />
+              </label>
+              <div class="inline-grid">
+                <label>
+                  Position
+                  <input data-field="position" value="${formatVector(transform.position || [0, 0, 0])}" />
+                </label>
+                <label>
+                  Rotation
+                  <input data-field="rotation" value="${formatVector(transform.rotation_euler || [0, 0, 0])}" />
+                </label>
+                <label>
+                  Scale
+                  <input data-field="scale" value="${formatVector(transform.scale || [1, 1, 1])}" />
+                </label>
+              </div>
+              <div class="action-row">
+                <button class="button button-secondary" type="button" data-action="select">Select</button>
+                <button class="button button-secondary" type="button" data-action="save">Save</button>
+                <button class="button button-secondary" type="button" data-action="toggle">${object.visible ? "Hide" : "Show"}</button>
+                <button class="button button-secondary" type="button" data-action="delete">Delete</button>
+              </div>
+            </div>
+          `;
+
+          for (const toggleEl of card.querySelectorAll('[data-action="toggle-open"]')) {
+            toggleEl.addEventListener("click", () => {
+              state.openObjectId = state.openObjectId === object.id ? null : object.id;
+              renderObjectList();
+            });
+          }
+
+          card.querySelector('[data-action="select"]').addEventListener("click", async () => {
+            state.selectedObjectId = object.id;
+            state.openObjectId = object.id;
+            renderObjectList();
+            await selectObjectInViewer(object.id);
+          });
+
+          card.querySelector('[data-action="save"]').addEventListener("click", async () => {
+            const nameInput = card.querySelector('[data-field="name"]');
+            const scaleInput = card.querySelector('[data-field="scale"]');
+            await saveObject(object.id, {
+              name: nameInput.value.trim() || object.name,
+              transform: {
+                scale: parseVector(scaleInput.value, 1.0),
+              },
+            });
+          });
+
+          card.querySelector('[data-action="toggle"]').addEventListener("click", async () => {
+            await updateObject(object.id, { visible: !object.visible });
+          });
+
+          card.querySelector('[data-action="delete"]').addEventListener("click", async () => {
+            await deleteObject(object.id);
+          });
+
+          objectList.appendChild(card);
+        }
+      }
+
       async function fetchJson(url, options = {}) {
         const response = await fetch(url, options);
         let payload = null;
@@ -662,6 +859,24 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         populateTrajectorySelects();
       }
 
+      async function fetchObjects() {
+        if (!state.projectId) {
+          state.objects = [];
+          renderObjectList();
+          return;
+        }
+        state.objects = await fetchJson(`/projects/${state.projectId}/objects`);
+        state.objectCount = state.objects.length;
+        if (state.selectedObjectId && !state.objects.some((object) => object.id === state.selectedObjectId)) {
+          state.selectedObjectId = null;
+        }
+        if (state.openObjectId && !state.objects.some((object) => object.id === state.openObjectId)) {
+          state.openObjectId = null;
+        }
+        updateSceneChrome();
+        renderObjectList();
+      }
+
       function applyManifest(manifest) {
         state.projectId = manifest.id;
         state.roomAssetId = manifest.scene.room_asset_id;
@@ -675,6 +890,9 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         state.roomAssetId = null;
         state.objectCount = 0;
         state.trajectories = [];
+        state.objects = [];
+        state.selectedObjectId = null;
+        state.openObjectId = null;
         localStorage.removeItem(PROJECT_STORAGE_KEY);
         viewerFrame.src = "about:blank";
         renderVideo.removeAttribute("src");
@@ -684,6 +902,7 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         stageHint.hidden = false;
         stageHint.innerHTML = "<div><strong>The viewer will appear here.</strong><div>Upload a room first, then drop meshes into the scene.</div></div>";
         updateSceneChrome();
+        renderObjectList();
       }
 
       async function launchViewer(assetId = null) {
@@ -705,6 +924,7 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
           setViewerBadge("viewer live", true);
           stageHint.hidden = true;
           updateSceneChrome();
+          await fetchObjects();
           setStatus(`Viewer ready at ${data.viewer_url}. Drop meshes to add them instantly, then drag them in the viewer.`, "success");
         } catch (error) {
           setViewerBadge("viewer error");
@@ -736,6 +956,7 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
           });
           const manifest = await fetchProject(project.id);
           applyManifest(manifest);
+          await fetchObjects();
           await fetchTrajectories();
           await launchViewer(upload.asset.id);
         } catch (error) {
@@ -786,9 +1007,107 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
           });
           const manifest = await fetchProject(state.projectId);
           applyManifest(manifest);
+          await fetchObjects();
           setStatus(`Added ${response.name}. It should appear in the live viewer now; click it there to move or rotate it.`, "success");
         } catch (error) {
           setStatus(`Mesh upload failed: ${error.message}`, "error");
+        }
+      }
+
+      async function selectObjectInViewer(objectId) {
+        const object = state.objects.find((item) => item.id === objectId);
+        if (!object) {
+          return;
+        }
+        try {
+          await fetchJson(`/projects/${state.projectId}/viewer/select-object`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ object_id: objectId }),
+          });
+          state.selectedObjectId = objectId;
+          await fetchObjects();
+          setStatus(`Selected ${object.name}. Its transform gizmo should now be visible in the viewer.`, "success");
+        } catch (error) {
+          setStatus(`Object selection failed: ${error.message}`, "error");
+        }
+      }
+
+      async function updateObject(objectId, patch) {
+        if (!state.projectId) {
+          return;
+        }
+        try {
+          await fetchJson(`/projects/${state.projectId}/objects/${objectId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(patch),
+          });
+          state.selectedObjectId = objectId;
+          await fetchObjects();
+          setStatus("Object updated and pushed into the live viewer.", "success");
+        } catch (error) {
+          setStatus(`Object update failed: ${error.message}`, "error");
+        }
+      }
+
+      async function saveObject(objectId, patch = {}) {
+        if (!state.projectId) {
+          return;
+        }
+        try {
+          const object = state.objects.find((item) => item.id === objectId);
+          if (patch.name || patch.transform?.scale || patch.visible !== undefined) {
+            await fetchJson(`/projects/${state.projectId}/objects/${objectId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                ...(patch.name ? { name: patch.name } : {}),
+                ...(patch.visible !== undefined ? { visible: patch.visible } : {}),
+                ...(patch.transform?.scale
+                  ? {
+                      transform: {
+                        position: object?.transform?.position || [0, 0, 0],
+                        rotation_euler: object?.transform?.rotation_euler || [0, 0, 0],
+                        scale: patch.transform.scale,
+                      },
+                    }
+                  : {}),
+              }),
+            });
+          }
+
+          await fetchJson(`/projects/${state.projectId}/viewer/save-object`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ object_id: objectId }),
+          });
+          state.selectedObjectId = null;
+          await fetchObjects();
+          setStatus("Object pose saved and gizmo hidden.", "success");
+        } catch (error) {
+          setStatus(`Object save failed: ${error.message}`, "error");
+        }
+      }
+
+      async function deleteObject(objectId) {
+        if (!state.projectId) {
+          return;
+        }
+        try {
+          await fetchJson(`/projects/${state.projectId}/objects/${objectId}`, {
+            method: "DELETE",
+          });
+          if (state.selectedObjectId === objectId) {
+            state.selectedObjectId = null;
+          }
+          if (state.openObjectId === objectId) {
+            state.openObjectId = null;
+          }
+          await fetchObjects();
+          setStatus("Object deleted from the scene.", "success");
+        } catch (error) {
+          setStatus(`Object deletion failed: ${error.message}`, "error");
         }
       }
 
@@ -843,6 +1162,7 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         try {
           const manifest = await fetchProject(projectId);
           applyManifest(manifest);
+          await fetchObjects();
           await fetchTrajectories();
           if (!manifest.scene.room_asset_id) {
             showLanding();
@@ -948,6 +1268,11 @@ def editor_page(_repo: ProjectRepository = Depends(get_repo)) -> str:
         setStatus("Drop a room `.ply` to start a new scene.");
       });
 
+      refreshObjectsButton.addEventListener("click", async () => {
+        await fetchObjects();
+        setStatus("Scene object list refreshed from disk.", "success");
+      });
+
       roomBrowseButton.addEventListener("click", (event) => {
         event.stopPropagation();
         roomFileInput.click();
@@ -991,4 +1316,50 @@ def load_room_viewer(
         asset_id=session.asset_id,
         source_uri=session.source_uri,
         loaded_object_ids=session.loaded_object_ids,
+    )
+
+
+@router.post(
+    "/projects/{project_id}/viewer/select-object",
+    response_model=ViewerObjectSelectionResponse,
+)
+def select_viewer_object(
+    project_id: str,
+    payload: ViewerObjectSelectionRequest,
+    viewer_service=Depends(get_viewer_service),
+) -> ViewerObjectSelectionResponse:
+    """Show one object's gizmo or clear viewer selection."""
+    try:
+        loaded_object_ids = viewer_service.set_selected_object(project_id, payload.object_id)
+    except (ProjectNotFoundError, EntityNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return ViewerObjectSelectionResponse(
+        selected_object_id=payload.object_id,
+        loaded_object_ids=loaded_object_ids,
+    )
+
+
+@router.post(
+    "/projects/{project_id}/viewer/save-object",
+    response_model=ViewerObjectSelectionResponse,
+)
+def save_viewer_object(
+    project_id: str,
+    payload: ViewerObjectSelectionRequest,
+    viewer_service=Depends(get_viewer_service),
+) -> ViewerObjectSelectionResponse:
+    """Persist the current object transform from the viewer and hide its gizmo."""
+    if not payload.object_id:
+        raise HTTPException(status_code=400, detail="object_id is required")
+
+    try:
+        viewer_service.persist_selected_object(project_id, payload.object_id)
+        loaded_object_ids = viewer_service.set_selected_object(project_id, None)
+    except (ProjectNotFoundError, EntityNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return ViewerObjectSelectionResponse(
+        selected_object_id=None,
+        loaded_object_ids=loaded_object_ids,
     )

@@ -24,3 +24,5 @@ def test_app_registers_core_routes(tmp_path) -> None:
     assert "/projects/{project_id}/trajectories/{trajectory_id}/capture-keyframe" in routes
     assert "/projects/{project_id}/trajectories/{trajectory_id}/render" in routes
     assert "/projects/{project_id}/renders/{filename}" in routes
+    assert "/projects/{project_id}/viewer/select-object" in routes
+    assert "/projects/{project_id}/viewer/save-object" in routes

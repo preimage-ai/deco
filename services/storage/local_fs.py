@@ -11,6 +11,7 @@ from services.scene_core.project_manifest import (
     ObjectInstance,
     ProjectManifest,
     TrajectoryRecord,
+    Transform,
     utc_now,
 )
 
@@ -106,7 +107,10 @@ class ProjectRepository:
     def update_object(self, project_id: str, object_id: str, patch: dict) -> ProjectManifest:
         manifest = self.get_project(project_id)
         obj = self._find_object(manifest, object_id)
-        merged = {**patch, "updated_at": utc_now()}
+        normalized_patch = dict(patch)
+        if "transform" in normalized_patch and isinstance(normalized_patch["transform"], dict):
+            normalized_patch["transform"] = Transform.model_validate(normalized_patch["transform"])
+        merged = {**normalized_patch, "updated_at": utc_now()}
         updated_object = obj.model_copy(update=merged)
         self._find_asset(manifest, updated_object.asset_id)
         index = manifest.scene.objects.index(obj)

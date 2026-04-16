@@ -32,10 +32,12 @@ def test_editor_page_includes_mesh_object_workflow(repo) -> None:
 
     assert 'id="room-dropzone"' in html
     assert 'id="mesh-dropzone"' in html
+    assert 'id="object-list"' in html
+    assert 'id="refresh-objects-button"' in html
     assert 'accept=".glb,.gltf"' in html
     assert 'id="new-scene-button"' in html
-    assert 'id="project-form"' not in html
-    assert 'id="place-object-form"' not in html
+    assert "position: absolute;" in html
+    assert "height: 100%;" in html
 
 
 def test_viewer_service_loads_room_asset_and_visible_mesh_objects(repo, monkeypatch) -> None:
@@ -123,7 +125,10 @@ def test_viewer_service_loads_room_asset_and_visible_mesh_objects(repo, monkeypa
             return handle
 
         def add_glb(self, *args, **kwargs) -> None:
-            handle = FakeGlbHandle()
+            handle = FakeGlbHandle(
+                position=kwargs.get("position", (0.0, 0.0, 0.0)),
+                wxyz=kwargs.get("wxyz", (1.0, 0.0, 0.0, 0.0)),
+            )
             self.glb_calls.append((args, kwargs))
             return handle
 
@@ -133,7 +138,16 @@ def test_viewer_service_loads_room_asset_and_visible_mesh_objects(repo, monkeypa
             self.wxyz = wxyz
             self.visible = visible
             self.removed = False
+            self._update_callbacks = []
             self._drag_end_callbacks = []
+
+        def on_update(self, callback):
+            self._update_callbacks.append(callback)
+            return callback
+
+        def trigger_update(self) -> None:
+            for callback in self._update_callbacks:
+                callback(SimpleNamespace())
 
         def on_drag_end(self, callback):
             self._drag_end_callbacks.append(callback)
@@ -147,8 +161,10 @@ def test_viewer_service_loads_room_asset_and_visible_mesh_objects(repo, monkeypa
             self.removed = True
 
     class FakeGlbHandle:
-        def __init__(self) -> None:
+        def __init__(self, *, position, wxyz) -> None:
             self.removed = False
+            self.position = position
+            self.wxyz = wxyz
             self._click_callbacks = []
 
         def on_click(self, callback):
@@ -217,7 +233,9 @@ def test_viewer_service_loads_room_asset_and_visible_mesh_objects(repo, monkeypa
     assert first_transform_kwargs["position"] == (1.0, 2.0, 3.0)
     assert first_transform_kwargs["wxyz"] == (1.0, 0.0, 0.0, 0.0)
     first_glb_args, first_glb_kwargs = server.scene.glb_calls[0]
-    assert first_glb_args[0] == f"/objects/{chair_obj.id}/control/mesh"
+    assert first_glb_args[0] == f"/objects/{chair_obj.id}/mesh"
+    assert first_glb_kwargs["position"] == (1.0, 2.0, 3.0)
+    assert first_glb_kwargs["wxyz"] == (1.0, 0.0, 0.0, 0.0)
     assert first_glb_kwargs["scale"] == (1.5, 1.0, 0.5)
 
     chair_handles = viewer._object_handles[chair_obj.id]
@@ -225,17 +243,26 @@ def test_viewer_service_loads_room_asset_and_visible_mesh_objects(repo, monkeypa
     assert chair_handles.transform.visible is False
     assert lamp_handles.transform.visible is False
 
+    chair_handles.mesh.position = (1.0, 2.0, 3.0)
+    chair_handles.mesh.wxyz = (1.0, 0.0, 0.0, 0.0)
     chair_handles.mesh.trigger_click()
     assert chair_handles.transform.visible is True
     assert lamp_handles.transform.visible is False
 
     chair_handles.transform.position = (4.0, 5.0, 6.0)
     chair_handles.transform.wxyz = (sqrt(0.5), 0.0, 0.0, sqrt(0.5))
+    chair_handles.transform.trigger_update()
     chair_handles.transform.trigger_drag_end()
+
+    assert chair_handles.mesh.position == (4.0, 5.0, 6.0)
+    assert chair_handles.transform.visible is True
+
+    viewer.persist_selected_object(project.id, chair_obj.id)
 
     updated_chair = repo.get_project(project.id).scene.objects[0]
     assert updated_chair.transform.position == [4.0, 5.0, 6.0]
     assert round(updated_chair.transform.rotation_euler[2], 6) == round(pi / 2.0, 6)
+    assert chair_handles.transform.visible is False
 
     plant_path = project_dir / "assets" / "objects" / "plant.glb"
     plant_path.write_bytes(b"plant")

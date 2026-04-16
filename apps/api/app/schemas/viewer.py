@@ -19,3 +19,16 @@ class ViewerLaunchResponse(BaseModel):
     asset_id: str
     source_uri: str
     loaded_object_ids: list[str]
+
+
+class ViewerObjectSelectionRequest(BaseModel):
+    """Request payload for showing or hiding an object's transform gizmo."""
+
+    object_id: str | None = None
+
+
+class ViewerObjectSelectionResponse(BaseModel):
+    """Response payload after updating viewer object selection."""
+
+    selected_object_id: str | None = None
+    loaded_object_ids: list[str]

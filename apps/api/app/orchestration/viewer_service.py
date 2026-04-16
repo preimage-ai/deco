@@ -32,6 +32,7 @@ class ViewerObjectHandles:
 
     transform: Any
     mesh: Any
+    scale: tuple[float, float, float]
 
 
 class MissingViewerDependencyError(ImportError):
@@ -167,6 +168,17 @@ class ViewerService:
 
         return [obj.id for obj in visible_objects]
 
+    def set_selected_object(self, project_id: str, object_id: str | None) -> list[str]:
+        """Show the gizmo for one object or hide gizmos entirely."""
+        if self._current_session is None or self._current_session.project_id != project_id:
+            return []
+
+        if object_id is None:
+            self._clear_selection()
+        else:
+            self._select_object(object_id)
+        return list(self._object_handles.keys())
+
     def _upsert_object_handles(self, server, manifest, obj, assets_by_id: dict) -> None:
         """Create or replace the scene handles for a placed mesh object."""
         asset = assets_by_id.get(obj.asset_id)
@@ -185,30 +197,41 @@ class ViewerService:
 
         self._remove_object_handles(obj.id)
         control_name = f"/objects/{obj.id}/control"
+        mesh_name = f"/objects/{obj.id}/mesh"
+        position = _vector3(obj.transform.position, fallback=0.0)
+        wxyz = _euler_xyz_to_wxyz(obj.transform.rotation_euler)
+        scale = _vector3(obj.transform.scale, fallback=1.0)
         transform_handle = server.scene.add_transform_controls(
             control_name,
-            position=_vector3(obj.transform.position, fallback=0.0),
-            wxyz=_euler_xyz_to_wxyz(obj.transform.rotation_euler),
+            position=position,
+            wxyz=wxyz,
             visible=obj.id == self._selected_object_id,
         )
         mesh_handle = server.scene.add_glb(
-            f"{control_name}/mesh",
+            mesh_name,
             glb_data=load_mesh_glb_bytes(source_path, kind=asset.kind),
-            scale=_vector3(obj.transform.scale, fallback=1.0),
+            position=position,
+            wxyz=wxyz,
+            scale=scale,
             visible=obj.visible,
         )
         self._object_handles[obj.id] = ViewerObjectHandles(
             transform=transform_handle,
             mesh=mesh_handle,
+            scale=scale,
         )
 
         @mesh_handle.on_click
         def _handle_click(_event, object_id: str = obj.id) -> None:
             self._select_object(object_id)
 
+        @transform_handle.on_update
+        def _handle_update(_event, object_id: str = obj.id) -> None:
+            self._sync_mesh_to_transform(object_id)
+
         @transform_handle.on_drag_end
-        def _handle_drag_end(_event, object_id: str = obj.id, project_id: str = manifest.id) -> None:
-            self._persist_object_transform(project_id=project_id, object_id=object_id)
+        def _handle_drag_end(_event, object_id: str = obj.id) -> None:
+            self._sync_mesh_to_transform(object_id)
 
     def _remove_object_handles(self, object_id: str) -> None:
         """Remove existing scene handles for an object if present."""
@@ -236,8 +259,26 @@ class ViewerService:
             self._selected_object_id = None
             return
 
+        current.transform.position = current.mesh.position
+        current.transform.wxyz = current.mesh.wxyz
         current.transform.visible = True
         self._selected_object_id = object_id
+
+    def _clear_selection(self) -> None:
+        """Hide all transform gizmos."""
+        if self._selected_object_id is not None:
+            previous = self._object_handles.get(self._selected_object_id)
+            if previous is not None:
+                previous.transform.visible = False
+        self._selected_object_id = None
+
+    def _sync_mesh_to_transform(self, object_id: str) -> None:
+        """Apply the current gizmo pose to the visible mesh without persisting yet."""
+        handles = self._object_handles.get(object_id)
+        if handles is None:
+            return
+        handles.mesh.position = handles.transform.position
+        handles.mesh.wxyz = handles.transform.wxyz
 
     def _persist_object_transform(self, project_id: str, object_id: str) -> None:
         """Write an interactively edited object transform back to the project manifest."""
@@ -245,6 +286,7 @@ class ViewerService:
         if handles is None:
             return
 
+        self._sync_mesh_to_transform(object_id)
         manifest = self.repo.get_project(project_id)
         obj = next((item for item in manifest.scene.objects if item.id == object_id), None)
         if obj is None:
@@ -255,12 +297,17 @@ class ViewerService:
             object_id,
             {
                 "transform": {
-                    "position": list(_vector3(handles.transform.position, fallback=0.0)),
-                    "rotation_euler": list(_wxyz_to_euler_xyz(handles.transform.wxyz)),
-                    "scale": list(_vector3(obj.transform.scale, fallback=1.0)),
+                    "position": list(_vector3(handles.mesh.position, fallback=0.0)),
+                    "rotation_euler": list(_wxyz_to_euler_xyz(handles.mesh.wxyz)),
+                    "scale": list(handles.scale),
                 }
             },
         )
+        self._clear_selection()
+
+    def persist_selected_object(self, project_id: str, object_id: str) -> None:
+        """Persist the current object pose and hide its gizmo."""
+        self._persist_object_transform(project_id, object_id)
 
 
 def _import_viser():
