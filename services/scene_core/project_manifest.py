@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Literal, Annotated
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, FiniteFloat
+
+Vector3 = Annotated[list[FiniteFloat], Field(min_length=3, max_length=3)]
 
 
 def utc_now() -> datetime:
@@ -22,9 +24,9 @@ def new_id(prefix: str) -> str:
 class Transform(BaseModel):
     """Basic transform for placed objects."""
 
-    position: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0])
-    rotation_euler: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0])
-    scale: list[float] = Field(default_factory=lambda: [1.0, 1.0, 1.0])
+    position: Vector3 = Field(default_factory=lambda: [0.0, 0.0, 0.0])
+    rotation_euler: Vector3 = Field(default_factory=lambda: [0.0, 0.0, 0.0])
+    scale: Vector3 = Field(default_factory=lambda: [1.0, 1.0, 1.0])
 
 
 class AssetRecord(BaseModel):
@@ -58,12 +60,12 @@ class CameraKeyframe(BaseModel):
     """A single trajectory keyframe."""
 
     id: str = Field(default_factory=lambda: new_id("kf"))
-    time_seconds: float
-    position: list[float]
-    target: list[float] | None = None
-    up_direction: list[float] | None = None
-    rotation_euler: list[float] | None = None
-    fov_degrees: float | None = None
+    time_seconds: FiniteFloat = Field(ge=0, le=300)
+    position: Vector3
+    target: Vector3 | None = None
+    up_direction: Vector3 | None = None
+    rotation_euler: Vector3 | None = None
+    fov_degrees: FiniteFloat | None = Field(default=None, gt=1, lt=179)
 
 
 class VelocityProfile(BaseModel):
@@ -80,7 +82,7 @@ class TrajectoryRecord(BaseModel):
     name: str
     spline: Literal["linear", "catmull_rom"] = "catmull_rom"
     is_closed: bool = False
-    duration_seconds: float = 5.0
+    duration_seconds: FiniteFloat = Field(default=5.0, gt=0, le=300)
     velocity: VelocityProfile = Field(default_factory=VelocityProfile)
     keyframes: list[CameraKeyframe] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utc_now)

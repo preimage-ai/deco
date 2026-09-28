@@ -64,6 +64,9 @@ class ViewerService:
             viser = _import_viser()
             self._server = viser.ViserServer(host=self.host, port=self.port, verbose=False)
             self._server.scene.set_up_direction("+z")
+            self._server.on_client_connect(self._set_initial_camera)
+            self._server.gui.configure_theme(show_logo=False, show_share_button=False, brand_color=(71, 102, 81))
+            self._server.gui.main_panel.minimize()
         return self._server
 
     def load_room(self, project_id: str, asset_id: str | None = None) -> ViewerSession:
@@ -85,7 +88,10 @@ class ViewerService:
         if not source_path.exists():
             raise ProjectNotFoundError(f"Asset file is missing on disk: {source_path}")
 
-        splat_data = load_gaussian_splat_ply(source_path)
+        if asset.metadata.get("preserve_origin"):
+            splat_data = load_gaussian_splat_ply(source_path, center=False)
+        else:
+            splat_data = load_gaussian_splat_ply(source_path)
         server = self.ensure_server()
         server.scene.reset()
         server.scene.set_up_direction("+z")
@@ -108,7 +114,24 @@ class ViewerService:
             source_uri=asset.source_uri,
             loaded_object_ids=loaded_object_ids,
         )
+        if hasattr(server, "get_clients"):
+            for client in server.get_clients().values():
+                self._set_initial_camera(client)
         return self._current_session
+
+    def _set_initial_camera(self, client):
+        if self._current_session is None:
+            return
+        manifest = self.repo.get_project(self._current_session.project_id)
+        if manifest.trajectories and manifest.trajectories[0].keyframes:
+            frame = manifest.trajectories[0].keyframes[0]
+            client.camera.up_direction = tuple(frame.up_direction or [0, 0, 1])
+            client.camera.position = tuple(frame.position)
+            if frame.target is not None:
+                client.camera.look_at = tuple(frame.target)
+            if frame.fov_degrees:
+                from math import radians
+                client.camera.fov = radians(frame.fov_degrees)
 
     def get_session(self) -> ViewerSession | None:
         """Return the current viewer session if one exists."""
@@ -232,6 +255,7 @@ class ViewerService:
         @transform_handle.on_drag_end
         def _handle_drag_end(_event, object_id: str = obj.id) -> None:
             self._sync_mesh_to_transform(object_id)
+            self._persist_object_transform(manifest.id, object_id, clear_selection=False)
 
     def _remove_object_handles(self, object_id: str) -> None:
         """Remove existing scene handles for an object if present."""
@@ -280,7 +304,7 @@ class ViewerService:
         handles.mesh.position = handles.transform.position
         handles.mesh.wxyz = handles.transform.wxyz
 
-    def _persist_object_transform(self, project_id: str, object_id: str) -> None:
+    def _persist_object_transform(self, project_id: str, object_id: str, *, clear_selection: bool = True) -> None:
         """Write an interactively edited object transform back to the project manifest."""
         handles = self._object_handles.get(object_id)
         if handles is None:
@@ -303,7 +327,8 @@ class ViewerService:
                 }
             },
         )
-        self._clear_selection()
+        if clear_selection:
+            self._clear_selection()
 
     def persist_selected_object(self, project_id: str, object_id: str) -> None:
         """Persist the current object pose and hide its gizmo."""

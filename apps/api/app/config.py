@@ -43,6 +43,7 @@ def _apply_runtime_env_default(name: str) -> None:
 class Settings:
     """Runtime settings for the API app."""
 
+    openai_api_key: str | None
     app_name: str
     projects_root: Path
     viewer_host: str
@@ -126,6 +127,7 @@ def get_settings() -> Settings:
     da3_device = _setting("DECO_DA3_DEVICE", "auto") or "auto"
     da3_process_res = int(_setting("DECO_DA3_PROCESS_RES", "504") or "504")
     return Settings(
+        openai_api_key=_setting("DECO_OPENAI_API_KEY") or _setting("OPENAI_API_KEY"),
         app_name="Deco Room GSplat Studio",
         projects_root=projects_root,
         viewer_host=viewer_host,

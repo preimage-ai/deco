@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI
-from fastapi.openapi.docs import get_swagger_ui_html
-from fastapi.responses import HTMLResponse, Response
+from pathlib import Path
 
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import HTMLResponse, Response, RedirectResponse
+
+from apps.api.app.api.astra import router as astra_router
+from apps.api.app.api.demo import router as demo_router
 from apps.api.app.api.assets import router as assets_router
 from apps.api.app.api.generation import router as generation_router
 from apps.api.app.api.projects import router as projects_router
@@ -17,12 +22,12 @@ from apps.api.app.config import get_settings
 FAVICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none">
 <defs>
   <linearGradient id="bg" x1="14" y1="10" x2="81" y2="86" gradientUnits="userSpaceOnUse">
-    <stop stop-color="#17365D"/>
-    <stop offset="1" stop-color="#091321"/>
+    <stop stop-color="#476651"/>
+    <stop offset="1" stop-color="#263e2e"/>
   </linearGradient>
   <linearGradient id="glow" x1="24" y1="22" x2="68" y2="71" gradientUnits="userSpaceOnUse">
-    <stop stop-color="#6EE7C8"/>
-    <stop offset="1" stop-color="#4DD2FF"/>
+    <stop stop-color="#d6e1c6"/>
+    <stop offset="1" stop-color="#98b395"/>
   </linearGradient>
 </defs>
 <rect x="8" y="8" width="80" height="80" rx="24" fill="url(#bg)"/>
@@ -53,6 +58,13 @@ def create_app() -> FastAPI:
     def healthcheck() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/", include_in_schema=False)
+    def home():
+        return RedirectResponse("/editor")
+
+    app.mount("/static", StaticFiles(directory=Path(__file__).resolve().parents[2] / "web" / "static"), name="static")
+    app.include_router(astra_router)
+    app.include_router(demo_router)
     app.include_router(projects_router)
     app.include_router(assets_router)
     app.include_router(generation_router)

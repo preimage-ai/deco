@@ -168,3 +168,36 @@ def test_runway_ratio_selection_and_download_path(tmp_path: Path) -> None:
     assert service._closest_ratio(1280, 720) == "1280:720"
     assert service._closest_ratio(720, 1280) == "720:1280"
     assert service._artifact_path("proj", "orbit", "https://example.com/out.mp4").name == "orbit_enhanced.mp4"
+
+
+def test_aleph2_does_not_send_legacy_ratio(repo, monkeypatch):
+    from types import SimpleNamespace
+    project = repo.create_project(ProjectManifest(name="Aleph 2"))
+    source = repo.project_dir(project.id) / "renders" / "input.mp4"
+    source.write_bytes(b"test")
+    service = RunwayAlephEnhancementService(repo, RunwayAlephEnhancementConfig(
+        api_key="test", api_version="2024-11-06", model="aleph2", prompt_text="Preserve geometry"))
+    seen = {}
+    def create(**kwargs):
+        seen.update(kwargs)
+        return SimpleNamespace(id="task_test")
+    client = SimpleNamespace(
+        uploads=SimpleNamespace(create_ephemeral=lambda **kw: SimpleNamespace(uri="runway://test")),
+        video_to_video=SimpleNamespace(create=create),
+        tasks=SimpleNamespace(retrieve=lambda _: SimpleNamespace(status="SUCCEEDED", output=["https://example.com/clip.mp4"])))
+    monkeypatch.setattr(service,"_client",lambda:client)
+    monkeypatch.setattr(service,"_download_file",lambda url,path:path.write_bytes(b"enhanced"))
+    result = service.enhance_video(project_id=project.id, source_relative_path=str(source.relative_to(repo.root)),
+                                   output_stem="input", width=640,height=360,wait_timeout_seconds=1)
+    assert seen["model"] == "aleph2"
+    assert "ratio" not in seen
+    assert result.status == "SUCCEEDED"
+
+
+def test_real_service_preserves_unavailable_error(repo):
+    import pytest
+    service = RunwayAlephEnhancementService(repo, RunwayAlephEnhancementConfig(
+        api_key=None, api_version="2024-11-06", model="gen4_aleph", prompt_text="Preserve geometry"))
+    with pytest.raises(EnhancementUnavailableError):
+        service.enhance_video(project_id="not_used",source_relative_path="not_used",output_stem="test",
+                              width=640,height=360,wait_timeout_seconds=1)

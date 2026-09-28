@@ -93,3 +93,33 @@ def test_render_trajectory_writes_mp4(tmp_path: Path) -> None:
     assert output_path.suffix == ".mp4"
     assert rendered.frame_count == 4
     assert client.calls == [(90, 160)] * 4
+
+
+def test_failed_render_leaves_no_partial_clip(tmp_path: Path) -> None:
+    import pytest
+
+    repo = ProjectRepository(tmp_path / "projects")
+    project = repo.create_project(ProjectManifest(name="Interrupted render"))
+
+    class DisconnectedClient:
+        def get_render(self, **kwargs):
+            raise TimeoutError("Client disconnected")
+
+    with pytest.raises(TimeoutError):
+        TrajectoryRenderService(repo).render_trajectory(
+            project_id=project.id, trajectory=_make_trajectory(),
+            client=DisconnectedClient(), width=160, height=90, fps=4,
+        )
+    assert list((repo.project_dir(project.id) / "renders").iterdir()) == []
+
+
+def test_render_name_stays_inside_project(tmp_path: Path) -> None:
+    repo = ProjectRepository(tmp_path / "projects")
+    project = repo.create_project(ProjectManifest(name="Safe render"))
+    trajectory = _make_trajectory()
+    trajectory.name = "../../outside/film"
+    result = TrajectoryRenderService(repo).render_trajectory(
+        project_id=project.id, trajectory=trajectory, client=_FakeClient(),
+        width=160, height=90, fps=2,
+    )
+    assert (repo.root / result.relative_path).parent == repo.project_dir(project.id) / "renders"

@@ -84,3 +84,9 @@ def get_da3_generation_service() -> DepthAnythingGenerationService:
 def get_render_service() -> TrajectoryRenderService:
     """Return the trajectory render service."""
     return TrajectoryRenderService(get_repo())
+
+
+def get_astra_generation_service():
+    """Astra plans geometry; the local CPU builds the GLB."""
+    from services.generation.astra3d import Astra3DService
+    return Astra3DService(get_asset_ingest_service(), api_key=get_settings().openai_api_key)

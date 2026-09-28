@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 import shutil
+import re
+import os
+import tempfile
 from pathlib import Path
 
 from services.scene_core.project_manifest import (
@@ -148,6 +151,8 @@ class ProjectRepository:
         return self.update_project(manifest)
 
     def _project_dir(self, project_id: str) -> Path:
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", project_id):
+            raise ProjectNotFoundError(project_id)
         return self.root / project_id
 
     def _manifest_path(self, project_id: str) -> Path:
@@ -155,9 +160,15 @@ class ProjectRepository:
 
     def _write_manifest(self, manifest: ProjectManifest) -> None:
         manifest_path = self._manifest_path(manifest.id)
-        manifest_path.write_text(
-            json.dumps(manifest.model_dump(mode="json"), indent=2) + "\n"
-        )
+        # Replace atomically so a browser reload cannot observe half a manifest.
+        fd, temporary = tempfile.mkstemp(dir=manifest_path.parent, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as handle:
+                handle.write(json.dumps(manifest.model_dump(mode="json"), indent=2) + "\n")
+            os.replace(temporary, manifest_path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
 
     @staticmethod
     def _find_asset(manifest: ProjectManifest, asset_id: str) -> AssetRecord:

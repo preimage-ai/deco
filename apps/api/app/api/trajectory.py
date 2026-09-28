@@ -141,7 +141,7 @@ def capture_keyframe(
     )
 
     updated_keyframes = sorted(
-        [*trajectory.keyframes, keyframe],
+        [*[item for item in trajectory.keyframes if item.time_seconds != time_seconds], keyframe],
         key=lambda item: item.time_seconds,
     )
     manifest = repo.update_trajectory(
@@ -188,6 +188,8 @@ def render_trajectory_video(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (TimeoutError, RuntimeError, ConnectionError) as exc:
+        raise HTTPException(status_code=503, detail="The viewer stopped responding during export. Keep the viewer connected and this tab active, then retry.") from exc
 
     return RenderTrajectoryResponse(
         filename=rendered.filename,
@@ -198,6 +200,19 @@ def render_trajectory_video(
     )
 
 render_router = APIRouter(prefix="/projects/{project_id}/renders", tags=["renders"])
+
+
+@render_router.get("")
+def list_renders(project_id: str, repo: ProjectRepository = Depends(get_repo)):
+    """List completed clips so exports survive editor reloads."""
+    try:
+        repo.get_project(project_id)
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    paths = sorted((repo.project_dir(project_id) / "renders").glob("*.mp4"),
+                   key=lambda p: p.stat().st_mtime, reverse=True)
+    return [{"filename": p.name, "size_bytes": p.stat().st_size,
+             "artifact_url": f"/projects/{project_id}/renders/{p.name}"} for p in paths if not p.name.endswith(".partial.mp4")]
 
 
 @render_router.post("/{filename}/enhance", response_model=EnhancedVideoResponse)

@@ -15,3 +15,6 @@ projects/*
 !projects/.gitkeep
 .codex
 .codex/*
+
+.venv-ai/
+.venv-da3/

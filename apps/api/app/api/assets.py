@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse
+from starlette.concurrency import run_in_threadpool
 
 from apps.api.app.deps import (
     get_asset_ingest_service,
@@ -142,7 +143,7 @@ async def generate_object_from_image(
                 if not chunk:
                     break
                 tmp.write(chunk)
-        asset = generation.generate_from_image(
+        asset = await run_in_threadpool(generation.generate_from_image,
             project_id=project_id,
             name=asset_name,
             image_path=temp_path,

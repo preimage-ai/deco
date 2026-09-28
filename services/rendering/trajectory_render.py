@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
+import re
+from uuid import uuid4
 
 import imageio
 
@@ -44,11 +45,12 @@ class TrajectoryRenderService:
         render_dir.mkdir(parents=True, exist_ok=True)
 
         timestamp = utc_now().strftime("%Y%m%dT%H%M%SZ")
-        safe_name = trajectory.name.lower().replace(" ", "_") or trajectory.id
-        filename = f"{safe_name}_{timestamp}.mp4"
+        safe_name = re.sub(r"[^a-z0-9_-]+", "_", trajectory.name.lower()).strip("_")[:64] or trajectory.id
+        filename = f"{safe_name}_{timestamp}_{uuid4().hex[:6]}.mp4"
         output_path = render_dir / filename
 
-        writer = imageio.get_writer(output_path, fps=fps, codec="libx264", quality=8)
+        temporary_path = output_path.with_suffix(".partial.mp4")
+        writer = imageio.get_writer(temporary_path, fps=fps, codec="libx264", quality=8, macro_block_size=2)
         try:
             for sample in samples:
                 frame = client.get_render(
@@ -58,10 +60,16 @@ class TrajectoryRenderService:
                     position=sample.position,
                     fov=sample.fov_radians,
                     transport_format="jpeg",
+                    timeout=60.0,
                 )
                 writer.append_data(frame)
-        finally:
+        except Exception:
             writer.close()
+            temporary_path.unlink(missing_ok=True)
+            raise
+        else:
+            writer.close()
+            temporary_path.replace(output_path)
 
         return RenderedVideo(
             filename=filename,

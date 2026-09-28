@@ -205,8 +205,13 @@ def test_viewer_service_loads_room_asset_and_visible_mesh_objects(repo, monkeypa
             self.port = port
             self.verbose = verbose
             self.scene = FakeScene()
+            self.gui = SimpleNamespace(configure_theme=lambda **kw: None,
+                                       main_panel=SimpleNamespace(minimize=lambda: None))
             self.stopped = False
             self.__class__.instances.append(self)
+
+        def on_client_connect(self, callback):
+            self.connect_callback = callback
 
         def stop(self) -> None:
             self.stopped = True
@@ -275,6 +280,8 @@ def test_viewer_service_loads_room_asset_and_visible_mesh_objects(repo, monkeypa
 
     assert chair_handles.mesh.position == (4.0, 5.0, 6.0)
     assert chair_handles.transform.visible is True
+    # Releasing a gizmo saves the pose without hiding the active controls.
+    assert repo.get_project(project.id).scene.objects[0].transform.position == [4.0, 5.0, 6.0]
 
     viewer.persist_selected_object(project.id, chair_obj.id)
 
@@ -304,6 +311,10 @@ def test_viewer_service_loads_room_asset_and_visible_mesh_objects(repo, monkeypa
     repo.delete_object(project.id, lamp_obj.id)
     loaded_after_delete = viewer.refresh_scene_objects(project.id)
     assert lamp_obj.id not in loaded_after_delete
+    assert lamp_obj.id not in viewer._object_handles
+
+    server.stop()
+    assert server.stopped is True
 
 
 def test_asset_download_route_serves_asset_file(repo) -> None:
@@ -396,7 +407,3 @@ def test_generation_route_returns_generated_project_and_viewer_urls(tmp_path: Pa
     assert payload["download_url"] == "/projects/proj_generated/assets/asset_generated/download"
     assert payload["input_image_count"] == 2
     assert payload["loaded_object_ids"] == []
-    assert lamp_obj.id not in viewer._object_handles
-
-    server.stop()
-    assert server.stopped is True

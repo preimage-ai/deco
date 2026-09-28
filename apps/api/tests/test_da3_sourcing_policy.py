@@ -34,6 +34,7 @@ def test_da3_defaults_to_hf_model_even_when_local_checkpoint_is_discoverable(
     monkeypatch.setenv("DECO_PROJECTS_ROOT", str(tmp_path / "projects"))
     monkeypatch.chdir(tmp_path)
 
+    monkeypatch.setattr(config_module, "_dotenv_values", lambda path: {})
     settings = config_module.get_settings()
 
     assert settings.da3_model_name == "depth-anything/DA3NESTED-GIANT-LARGE-1.1"
@@ -50,6 +51,7 @@ def test_da3_explicit_local_override_resolves_to_local_path(
 
     monkeypatch.setenv("DECO_DA3_MODEL", str(local_model_dir))
     monkeypatch.setenv("DECO_PROJECTS_ROOT", str(tmp_path / "projects"))
+    monkeypatch.setattr(config_module, "_dotenv_values", lambda path: {})
     settings = config_module.get_settings()
 
     assert settings.da3_model_name == str(local_model_dir.resolve())

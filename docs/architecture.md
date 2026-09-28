@@ -3,7 +3,7 @@
 Current runnable stack:
 
 - FastAPI API for manifest-backed project CRUD and asset ingest
-- Minimal server-rendered editor shell at `/editor`
+- Browser studio served at `/editor`, with HTML and static assets in `apps/web`
 - Optional Depth Anything 3 image-to-gsplat generation path
 - `viser` room viewer launched through the API and loaded from stored room gsplat assets plus placed mesh objects
 
@@ -25,4 +25,4 @@ The current editor now has two entry workflows:
 
 While a viewer session is active, object create, update, and delete operations are reconciled into the open scene without reloading the room splat.
 
-This is a temporary bridge until the dedicated web editor is implemented under `apps/web`.
+The browser editor lives under `apps/web` and is served directly by FastAPI without a separate frontend build. A local sample generator in `services/demo` writes standard PLY, GLB, and manifest records through the same repository used by imported scenes. See `docs/demo-walkthrough.md` for the presentation flow and runtime limits.

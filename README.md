@@ -4,8 +4,21 @@ Deco is a FastAPI-based workspace for turning room photos or existing `gsplat` c
 
 It combines a local project store, a server-rendered editor at `/editor`, a live `viser` viewer session, and optional AI-assisted generation paths for room splats, object meshes, and post-processed renders.
 
+## Ready-to-present demo
+
+```bash
+./scripts/install.sh --python python3.11 --venv .venv
+./scripts/demo.sh
+```
+
+Open **http://localhost:8000/editor** and choose **Explore the demo studio**. You get a furnished procedural room, six editable objects, and a prepared camera move. Stage the room, export an MP4, download it, and reopen saved projects. No AI models or API keys are needed for this flow.
+
+See the [three-minute presentation walkthrough](docs/demo-walkthrough.md) for the click path, setup, and current limits. The local runtime uses one shared viewer; keep one editing tab active during the demo.
+
 ## Features
 
+- One-click furnished demo with real Gaussian-splat and GLB assets
+- Saved project library, rename, object duplication, and persistent render downloads
 - Project, asset, scene, trajectory, and render management through a FastAPI backend
 - Browser-based editor served at `/editor`
 - Room creation from image sets through optional Depth Anything 3 integration
@@ -25,7 +38,7 @@ The current runtime stack includes:
 - `scripts`: installation and development helper scripts
 - `docs`: API contract and architecture notes
 
-The browser UI is currently served from the API app at `/editor`. The `apps/web` directory remains reserved for a future standalone frontend.
+The browser UI is currently served from the API app at `/editor`. The editor template and static assets live in `apps/web`; FastAPI serves them directly.
 
 ## Quick Start
 
@@ -90,6 +103,12 @@ Once a room is loaded, the editor supports:
 - optional Runway enhancement via `POST /projects/{project_id}/renders/{filename}/enhance`
 
 `.gltf` uploads must currently be self-contained. External `.bin` buffers and sidecar textures are not copied into the project store.
+
+## Optional AI setup and recommendations
+
+See [AI integrations: setup, choices, and improvement plan](docs/ai-integrations.md) for detailed Hunyuan, GPT-6 Astra, DA3, and Runway instructions, plus room video reconstruction recommendations.
+
+The editor now includes **GPT-6 Astra procedural furniture** from text or a reference image. Set `OPENAI_API_KEY` (or `DECO_OPENAI_API_KEY`) and select Astra in AI tools. It builds simplified colored GLBs locally from validated model plans; it does not replace detailed neural mesh reconstruction. Runway enhancement supports `aleph2` as well as `gen4_aleph`.
 
 ## Model and Runtime Sourcing
 
@@ -174,7 +193,7 @@ Current backend scope includes:
 - render enhancement and artifact download under `/projects/{project_id}/renders`
 - viewer launch routes under `/projects/{project_id}/viewer`
 
-Additional details are documented in [docs/api-contract.md](/home/altair/preimage/deco/docs/api-contract.md).
+Additional details are documented in [docs/api-contract.md](docs/api-contract.md).
 
 ## Development
 
@@ -193,7 +212,7 @@ PYTHONPATH=. PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest apps/api/tests/te
 ## Repository Layout
 
 - `apps/api` FastAPI application, dependency wiring, API routes, and tests
-- `apps/web` reserved for a future standalone frontend
+- `apps/web` editor HTML, styles, and browser interactions
 - `services` domain packages for generation, rendering, storage, viewer, and scene state
 - `projects` local project and artifact storage
 - `configs` example configuration templates

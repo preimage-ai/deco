@@ -9,7 +9,10 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
-from runwayml import RunwayML
+try:
+    from runwayml import RunwayML
+except ImportError:  # Enhancement is optional for the local studio.
+    RunwayML = None
 
 from services.storage.local_fs import ProjectRepository
 
@@ -78,6 +81,8 @@ class RunwayAlephEnhancementService:
         """Upload a local render, wait for enhancement, and download the result."""
         prompt_text = (prompt or "").strip() or self.config.prompt_text
         try:
+            if self.config.model not in {"gen4_aleph", "aleph2"}:
+                raise EnhancementUnavailableError("Supported video editors are gen4_aleph and aleph2.")
             client = self._client()
             source_path = self.repo.root / source_relative_path
             if not source_path.exists():
@@ -88,12 +93,11 @@ class RunwayAlephEnhancementService:
                     file=(source_path.name, source_file, self._content_type_for(source_path)),
                 )
 
-            task = client.video_to_video.create(
-                model=self.config.model,
-                prompt_text=prompt_text,
-                video_uri=upload.uri,
-                ratio=self._closest_ratio(width, height),
-            )
+            request = {"model": self.config.model, "prompt_text": prompt_text, "video_uri": upload.uri}
+            # Aleph 2 uses the source video dimensions; legacy ratio is not in its schema.
+            if self.config.model == "gen4_aleph":
+                request["ratio"] = self._closest_ratio(width, height)
+            task = client.video_to_video.create(**request)
             task_id = task.id
 
             deadline = time.monotonic() + max(wait_timeout_seconds, 1)
@@ -127,7 +131,7 @@ class RunwayAlephEnhancementService:
                 task_id=task_id,
                 status=last_status,
             )
-        except EnhancementFailedError:
+        except (EnhancementFailedError, EnhancementUnavailableError):
             raise
         except Exception as exc:
             raise EnhancementFailedError(str(exc)) from exc
@@ -137,6 +141,8 @@ class RunwayAlephEnhancementService:
             raise EnhancementUnavailableError(
                 "Runway enhancement is not configured; set DECO_RUNWAY_API_KEY or RUNWAYML_API_SECRET"
             )
+        if RunwayML is None:
+            raise EnhancementUnavailableError("Install runwayml to enable Runway enhancement")
         return RunwayML(api_key=self.config.api_key, runway_version=self.config.api_version)
 
     def _artifact_path(self, project_id: str, output_stem: str, output_url: str) -> Path:
